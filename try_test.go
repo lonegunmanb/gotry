@@ -1,10 +1,11 @@
 package gotry
 
 import (
-	"testing"
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/suite"
 	"errors"
+	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/assert"
+	"testing"
 )
 
 const ExpectedReturnValue = 1
@@ -21,6 +22,10 @@ func (suite *TryTestSuite) SetupTest() {
 	suite.policy = &Policy{}
 	suite.policy.SetRetry(1)
 	suite.retried = false
+}
+
+func TestTrySuite(t *testing.T) {
+	suite.Run(t, &TryTestSuite{})
 }
 
 func (suite *TryTestSuite) TestSuccessFunc(){
@@ -40,7 +45,7 @@ func (suite *TryTestSuite) TestInvalidReturnValueFunc() {
 		var returnValue= ExpectedReturnValue
 		return returnValue, returnValue < 0, nil
 	}
-	onRetryHook := func(interface{}, error) {
+	onRetryHook := func(int, interface{}, error) {
 		suite.retried = true
 	}
 	var returnValue, isReturnValueValid, err = suite.policy.ExecuteWithRetryHook(invalidReturnFunc,
@@ -56,7 +61,7 @@ func (suite *TryTestSuite) TestErrorFunc() {
 	var errorFunc = func() (interface{}, bool, error) {
 		return ExpectedReturnValue, true, ExpectedError
 	}
-	onRetryHook := func(interface{}, error) {
+	onRetryHook := func(int, interface{}, error) {
 		suite.retried = true
 	}
 	var returnValue, isReturnValueValid, err = suite.policy.ExecuteWithRetryHook(errorFunc, onRetryHook)
@@ -66,24 +71,41 @@ func (suite *TryTestSuite) TestErrorFunc() {
 	assert.True(suite.T(), suite.retried)
 }
 
+type mockRetry struct {
+	mock.Mock
+}
+
+func (hook *mockRetry) OnRetry(retryAttempt int, returnValue interface{}, err error){
+	hook.Called(retryAttempt, returnValue, err)
+}
+
 func (suite *TryTestSuite) TestMultipleRetry() {
-	const RetryAttempt = 5
+	const RetryAttempt = 2
 	suite.policy.SetRetry(RetryAttempt)
-	var retryCount = 0
 	var errorFunc = func() (interface{}, bool, error) {
 		return ExpectedReturnValue, true, ExpectedError
 	}
-	onRetryHook := func(interface{}, error) {
-		retryCount++
-	}
+	mockRetry, onRetryHook := prepareMockRetryHook()
 	var _, _, err = suite.policy.ExecuteWithRetryHook(errorFunc, onRetryHook)
 	assert.Equal(suite.T(), ExpectedError, err)
-	assert.Equal(suite.T(), RetryAttempt, retryCount)
+	assertTwiceRetryCall(mockRetry, suite)
 }
 
-func TestTrySuite(t *testing.T) {
-	suite.Run(t, &TryTestSuite{})
+func prepareMockRetryHook() (*mockRetry, func(retryAttempt int, returnValue interface{}, err error)) {
+	mockRetry := &mockRetry{}
+	onRetryHook := func(retryAttempt int, returnValue interface{}, err error) {
+		mockRetry.OnRetry(retryAttempt, returnValue, err)
+	}
+	expectTwiceRetryCall(mockRetry)
+	return mockRetry, onRetryHook
 }
 
+func assertTwiceRetryCall(mockRetry *mockRetry, suite *TryTestSuite) {
+	mockRetry.AssertCalled(suite.T(), "OnRetry", 1, ExpectedReturnValue, ExpectedError)
+	mockRetry.AssertCalled(suite.T(), "OnRetry", 2, ExpectedReturnValue, ExpectedError)
+}
 
-
+func expectTwiceRetryCall(mockRetry *mockRetry) {
+	mockRetry.On("OnRetry", 1, ExpectedReturnValue, ExpectedError).Return()
+	mockRetry.On("OnRetry", 2, ExpectedReturnValue, ExpectedError).Return()
+}
