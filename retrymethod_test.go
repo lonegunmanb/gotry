@@ -47,6 +47,24 @@ func (suite *RetryMethodTestSuite) TestMultipleRetryMethod() {
 	assertTwiceRetryMethodCall(mockRetry, suite)
 }
 
+func (suite *RetryMethodTestSuite) TestInfiniteRetryMethod() {
+	suite.policy.SetInfiniteRetry(true)
+	count := 0
+	var errorMethod = func() error {
+		defer func(){
+			count++
+		}()
+		if count< 2 {
+			return ExpectedError
+		}
+		return nil
+	}
+	mockRetry, onRetryHook := prepareMockRetryMethodHook()
+	var err = suite.policy.ExecuteMethodWithRetryHook(errorMethod, onRetryHook)
+	assert.Nil(suite.T(), err)
+	assertTwiceRetryMethodCall(mockRetry, suite)
+}
+
 func prepareMockRetryMethodHook() (*mockRetry, func(retryAttempt int, err error)) {
 	mockRetry := &mockRetry{}
 	onRetryHook := func(retryAttempt int, err error) {

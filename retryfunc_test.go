@@ -21,8 +21,7 @@ func (suite *RetryFuncTestSuite) TestSuccessFunc(){
 	}
 	var returnValue, isReturnValueValid, err = suite.policy.ExecuteFunc(successFunc)
 	assert.Nil(suite.T(), err)
-	assert.True(suite.T(), isReturnValueValid, "success invoke's return value should pass check")
-	assert.Equal(suite.T(), ExpectedReturnValue, returnValue, "should be equal")
+	assertValidReturnValue(suite, returnValue, isReturnValueValid)
 	assert.False(suite.T(), suite.retried)
 }
 
@@ -51,10 +50,14 @@ func (suite *RetryFuncTestSuite) TestErrorFunc() {
 		suite.retried = true
 	}
 	var returnValue, isReturnValueValid, err = suite.policy.ExecuteFuncWithRetryHook(errorFunc, onRetryHook)
-	assert.Equal(suite.T(), ExpectedReturnValue, returnValue)
-	assert.True(suite.T(), isReturnValueValid)
+	assertValidReturnValue(suite, returnValue, isReturnValueValid)
 	assert.Equal(suite.T(), ExpectedError, err)
 	assert.True(suite.T(), suite.retried)
+}
+
+func assertValidReturnValue(suite *RetryFuncTestSuite, returnValue interface{}, isReturnValueValid bool) {
+	assert.Equal(suite.T(), ExpectedReturnValue, returnValue)
+	assert.True(suite.T(), isReturnValueValid)
 }
 
 func (suite *RetryFuncTestSuite) TestMultipleRetry() {
@@ -66,6 +69,25 @@ func (suite *RetryFuncTestSuite) TestMultipleRetry() {
 	mockRetry, onRetryHook := prepareMockRetryFuncHook()
 	var _, _, err = suite.policy.ExecuteFuncWithRetryHook(errorFunc, onRetryHook)
 	assert.Equal(suite.T(), ExpectedError, err)
+	assertTwiceRetryFuncCall(mockRetry, suite)
+}
+
+func (suite *RetryFuncTestSuite) TestInfiniteRetry() {
+	suite.policy.SetInfiniteRetry(true)
+	invokeCount := 0
+	var errorFunc = func() (interface{}, bool, error) {
+		defer func(){
+			invokeCount++
+		}()
+		if invokeCount < 2 {
+			return ExpectedReturnValue, true, ExpectedError
+		}
+		return ExpectedReturnValue, true, nil
+	}
+	mockRetry, onRetryHook := prepareMockRetryFuncHook()
+	var returnValue, isReturnValueValid, err = suite.policy.ExecuteFuncWithRetryHook(errorFunc, onRetryHook)
+	assert.Nil(suite.T(), err)
+	assertValidReturnValue(suite, returnValue, isReturnValueValid)
 	assertTwiceRetryFuncCall(mockRetry, suite)
 }
 
