@@ -66,7 +66,7 @@ func (suite *TryTestSuite) TestErrorFunc() {
 	assert.True(suite.T(), suite.retried)
 }
 
-func (suite *TryTestSuite) MultipleRetry() {
+func (suite *TryTestSuite) TestMultipleRetry() {
 	const RetryAttempt = 5
 	suite.policy.SetRetry(RetryAttempt)
 	var retryCount = 0
