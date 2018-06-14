@@ -59,9 +59,9 @@ func (suite *TryTestSuite) TestErrorFunc() {
 	onRetryHook := func(interface{}, error) {
 		suite.retried = true
 	}
-	var returnValue, isRetrunValueValid, err = suite.policy.ExecuteWithRetryHook(errorFunc, onRetryHook)
+	var returnValue, isReturnValueValid, err = suite.policy.ExecuteWithRetryHook(errorFunc, onRetryHook)
 	assert.Equal(suite.T(), ExpectedReturnValue, returnValue)
-	assert.True(suite.T(), isRetrunValueValid)
+	assert.True(suite.T(), isReturnValueValid)
 	assert.Equal(suite.T(), ExpectedError, err)
 	assert.True(suite.T(), suite.retried)
 }
