@@ -3,6 +3,7 @@ package gotry
 import (
 	"testing"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/suite"
 )
 
 type Integer int
@@ -13,17 +14,29 @@ func (input Integer) IsSuccess() bool{
 	return input == ExpectedReturnValue
 }
 
-func TestSuccessFunc(t *testing.T){
-	policy := &Policy{}
-	policy.SetRetry(1)
+type TryTestSuite struct {
+	suite.Suite
+	policy *Policy
+}
+
+func (suite *TryTestSuite) SetupTest() {
+	suite.policy = &Policy{}
+	suite.policy.SetRetry(1)
+}
+
+func (suite *TryTestSuite) TestSuccessFunc(){
 	var successFunc Func = func() (ReturnValue, error){
-		var returnValue Integer = ExpectedReturnValue
+		var returnValue = ExpectedReturnValue
 		return returnValue, nil
 	}
-	var returnValue, err = policy.Execute(successFunc)
-	assert.Nil(t, err)
-	assert.IsType(t, ExpectedReturnValue, returnValue)
-	assert.Equal(t, ExpectedReturnValue, returnValue, "should be equal")
+	var returnValue, err = suite.policy.Execute(successFunc)
+	assert.Nil(suite.T(), err)
+	assert.IsType(suite.T(), ExpectedReturnValue, returnValue)
+	assert.Equal(suite.T(), ExpectedReturnValue, returnValue, "should be equal")
+}
+
+func TestTrySuite(t *testing.T) {
+	suite.Run(t, &TryTestSuite{})
 }
 
 
