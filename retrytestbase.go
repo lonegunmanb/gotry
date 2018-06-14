@@ -9,6 +9,13 @@ import (
 const ExpectedReturnValue = 1
 
 var ExpectedError = errors.New("expectedError")
+const PanicContent ="test panic"
+var panicMethod = func() error {
+	panic(PanicContent)
+}
+var panicFunc = func() (interface{}, bool, error) {
+	panic(PanicContent)
+}
 
 type TryTestBaseSuite struct {
 	suite.Suite
@@ -26,10 +33,14 @@ type mockRetry struct {
 	mock.Mock
 }
 
-func (hook *mockRetry) OnRetryFunc(retryAttempt int, returnValue interface{}, err error){
+func (hook *mockRetry) OnFuncErrorRetry(retryAttempt int, returnValue interface{}, err error){
 	hook.Called(retryAttempt, returnValue, err)
 }
 
-func (hook *mockRetry) OnRetryMethod(retryAttempt int, err error) {
+func (hook *mockRetry) OnMethodErrorRetry(retryAttempt int, err error) {
 	hook.Called(retryAttempt, err)
+}
+
+func (hook *mockRetry) OnPanic(panicError interface{}){
+	hook.Called(panicError)
 }

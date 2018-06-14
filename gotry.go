@@ -1,10 +1,10 @@
 package gotry
 
-
 type Func func() (returnValue interface{}, isReturnValueValid bool, err error)
-type OnRetryFunc func(retryCount int, returnValue interface{}, err error)
-type Method func() (error)
-type OnRetryMethod func(retryCount int, err error)
+type OnFuncErrorRetry func(retryCount int, returnValue interface{}, err error)
+type Method func() error
+type OnMethodErrorRetry func(retryCount int, err error)
+type OnPanic func(panicError interface{})
 
 type Policy struct{
 	retryLimit int
@@ -23,17 +23,35 @@ func (policy *Policy) SetInfiniteRetry(isInfinite bool) {
 	policy.isInfinite = isInfinite
 }
 
-func (policy *Policy) ExecuteFunc(funcBody Func) (interface{}, bool, error) {
-	return policy.ExecuteFuncWithRetryHook(funcBody, nil)
+func (policy *Policy) ExecuteFunc(funcBody Func) (returnValue interface{}, isReturnValueValid bool, err error) {
+	return policy.ExecuteFuncWithRetryHook(funcBody, nil, nil)
 }
 
-func(policy *Policy) ExecuteFuncWithRetryHook(funcBody Func, onRetry OnRetryFunc) (returnValue interface{}, isReturnValueValid bool, err error) {
+func(policy *Policy) ExecuteFuncWithRetryHook(funcBody Func, onRetry OnFuncErrorRetry, onPanic OnPanic) (returnValue interface{}, isReturnValueValid bool, err error) {
+	panicOccurred := false
+	var wrappedOnPanic OnPanic = func(panicError interface{}){
+		panicOccurred = true
+		if onPanic != nil {
+			onPanic(panicError)
+		}
+	}
 	for i := 0; policy.continueRetry(i); i++ {
-		returnValue, isReturnValueValid, err = funcBody()
-		if err == nil && isReturnValueValid {
+		panicOccurred = false
+		var recoverableMethod = func() (returnValue interface{}, isReturnValueValid bool, err error) {
+			defer func() {
+				err := recover()
+				if err != nil {
+					wrappedOnPanic(err)
+					panicIfExceedLimit(policy, i, err)
+				}
+			}()
+			return funcBody()
+		}
+		returnValue, isReturnValueValid, err = recoverableMethod()
+		if err == nil && isReturnValueValid && !panicOccurred {
 			return returnValue, true, nil
 		}
-		if onRetry != nil {
+		if onRetry != nil && !panicOccurred {
 			onRetry(i+1, returnValue, err)
 		}
 	}
@@ -41,18 +59,44 @@ func(policy *Policy) ExecuteFuncWithRetryHook(funcBody Func, onRetry OnRetryFunc
 }
 
 func (policy *Policy) ExecuteMethod(methodBody Method) error {
-	return policy.ExecuteMethodWithRetryHook(methodBody, nil)
+	return policy.ExecuteMethodWithRetryHook(methodBody, nil, nil)
 }
 
-func(policy *Policy) ExecuteMethodWithRetryHook(methodBody Method, onRetry OnRetryMethod) (err error) {
+func(policy *Policy) ExecuteMethodWithRetryHook(methodBody Method, onErrorRetry OnMethodErrorRetry, onPanic OnPanic) (err error) {
+	panicOccurred := false
+	var wrappedOnPanic OnPanic = func(panicError interface{}){
+		panicOccurred = true
+		if onPanic != nil {
+			onPanic(panicError)
+		}
+	}
 	for i := 0; policy.continueRetry(i); i++ {
-		err = methodBody()
-		if err == nil {
+		panicOccurred = false
+		var recoverableMethod = func() error {
+			defer func() {
+				err := recover()
+				if err != nil {
+					wrappedOnPanic(err)
+					panicIfExceedLimit(policy, i, err)
+				}
+			}()
+			return methodBody()
+		}
+
+		err = recoverableMethod()
+
+		if err == nil && !panicOccurred {
 			return nil
 		}
-		if onRetry != nil {
-			onRetry(i+1, err)
+		if onErrorRetry != nil && !panicOccurred{
+			onErrorRetry(i+1, err)
 		}
 	}
 	return err
+}
+
+func panicIfExceedLimit(policy *Policy, i int, err interface{}) {
+	if !policy.continueRetry(i) {
+		panic(err)
+	}
 }
