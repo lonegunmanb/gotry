@@ -7,7 +7,9 @@ import (
 )
 
 const ExpectedReturnValue = 1
-
+const OnPanicMethodName = "OnPanic"
+const OnMethodErrorRetryMethodName = "OnMethodErrorRetry"
+const OnFuncErrorRetryMethodName = "OnFuncErrorRetry"
 var ExpectedError = errors.New("expectedError")
 const PanicContent ="test panic"
 var panicMethod = func() error {
@@ -19,12 +21,12 @@ var panicFunc = func() (interface{}, bool, error) {
 
 type TryTestBaseSuite struct {
 	suite.Suite
-	policy *Policy
+	policy Policy
 	retried bool
 }
 
 func (suite *TryTestBaseSuite) SetupTest() {
-	suite.policy = &Policy{}
+	suite.policy = NewPolicy()
 	suite.policy.SetRetry(1)
 	suite.retried = false
 }
