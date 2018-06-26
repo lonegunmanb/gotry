@@ -6,47 +6,58 @@ type Method func() error
 type OnMethodErrorRetry func(retryCount int, err error)
 type OnPanic func(panicError interface{})
 
+type FuncReturn struct {
+	ReturnValue interface{}
+	Valid       bool
+	Err         error
+}
+
 type Policy interface {
-	SetRetry(retryLimit int)
-	SetInfiniteRetry(isInfinite bool)
-	SetRetryOnPanic(retryOnPanic bool)
-	ExecuteFunc(funcBody Func) (returnValue interface{}, isReturnValueValid bool, err error)
-	ExecuteFuncWithRetryHook(funcBody Func, onRetry OnFuncErrorRetry, onPanic OnPanic) (returnValue interface{}, isReturnValueValid bool, err error)
+	SetRetry(retryLimit int) Policy
+	SetInfiniteRetry(isInfinite bool) Policy
+	SetRetryOnPanic(retryOnPanic bool) Policy
+	ExecuteFunc(funcBody Func) FuncReturn
+	ExecuteFuncWithRetryHook(funcBody Func, onRetry OnFuncErrorRetry, onPanic OnPanic) FuncReturn
 	ExecuteMethod(methodBody Method) error
 	ExecuteMethodWithRetryHook(methodBody Method, onErrorRetry OnMethodErrorRetry, onPanic OnPanic) error
 }
 
 type policy struct{
-	retryLimit int
-	isInfinite bool
 	retryOnPanic bool
+	continueRetry func(int) bool
 }
 
 func NewPolicy() Policy {
-	return &policy{retryOnPanic: true}
+	return &policy{
+		retryOnPanic:  true,
+		continueRetry: func(retryAttempt int) bool { return false },
+	}
 }
 
-func (policy *policy)continueRetry(i int) bool {
-	return i < policy.retryLimit || policy.isInfinite
+func (policy policy) SetRetry(retryLimit int) Policy{
+	policy.continueRetry = func(retryAttempt int) bool {
+		return retryAttempt < retryLimit
+	}
+	return &policy
 }
 
-func (policy *policy) SetRetry(retryLimit int) {
-	policy.retryLimit = retryLimit
+func (policy policy) SetInfiniteRetry(isInfinite bool) Policy{
+	policy.continueRetry = func(retryAttempt int) bool {
+		return true
+	}
+	return &policy
 }
 
-func (policy *policy) SetInfiniteRetry(isInfinite bool) {
-	policy.isInfinite = isInfinite
-}
-
-func (policy *policy) SetRetryOnPanic(retryOnPanic bool){
+func (policy policy) SetRetryOnPanic(retryOnPanic bool) Policy{
 	policy.retryOnPanic = retryOnPanic
+	return &policy
 }
 
-func (policy *policy) ExecuteFunc(funcBody Func) (returnValue interface{}, isReturnValueValid bool, err error) {
+func (policy *policy) ExecuteFunc(funcBody Func) FuncReturn {
 	return policy.ExecuteFuncWithRetryHook(funcBody, nil, nil)
 }
 
-func(policy *policy) ExecuteFuncWithRetryHook(funcBody Func, onRetry OnFuncErrorRetry, onPanic OnPanic) (returnValue interface{}, isReturnValueValid bool, err error) {
+func(policy *policy) ExecuteFuncWithRetryHook(funcBody Func, onRetry OnFuncErrorRetry, onPanic OnPanic) (funcReturn FuncReturn) {
 	panicOccurred := false
 	var wrappedOnPanic OnPanic = func(panicError interface{}){
 		panicOccurred = true
@@ -66,12 +77,12 @@ func(policy *policy) ExecuteFuncWithRetryHook(funcBody Func, onRetry OnFuncError
 			}()
 			return funcBody()
 		}
-		returnValue, isReturnValueValid, err = recoverableMethod()
-		if err == nil && isReturnValueValid && !panicOccurred {
-			return returnValue, true, nil
+		funcReturn.ReturnValue, funcReturn.Valid, funcReturn.Err = recoverableMethod()
+		if funcReturn.Err == nil && funcReturn.Valid && !panicOccurred {
+			return
 		}
 		if onRetry != nil && !panicOccurred && policy.continueRetry(i) {
-			onRetry(i+1, returnValue, err)
+			onRetry(i+1, funcReturn.ReturnValue, funcReturn.Err)
 		}
 	}
 	return
@@ -95,8 +106,8 @@ func(policy *policy) ExecuteMethodWithRetryHook(methodBody Method, onErrorRetry 
 		onErrorRetry(retryCount, err)
 	}
 
-	var _, _, funcError = policy.ExecuteFuncWithRetryHook(function, onFuncRetry, onPanic)
-	return funcError
+	var funcReturn = policy.ExecuteFuncWithRetryHook(function, onFuncRetry, onPanic)
+	return funcReturn.Err
 }
 
 func panicIfExceedLimit(policy *policy, i int, err interface{}) {

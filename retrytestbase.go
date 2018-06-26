@@ -26,8 +26,7 @@ type TryTestBaseSuite struct {
 }
 
 func (suite *TryTestBaseSuite) SetupTest() {
-	suite.policy = NewPolicy()
-	suite.policy.SetRetry(1)
+	suite.policy = NewPolicy().SetRetry(1)
 	suite.retried = false
 }
 

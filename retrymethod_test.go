@@ -38,7 +38,7 @@ func (suite *RetryMethodTestSuite) TestErrorMethod() {
 
 func (suite *RetryMethodTestSuite) TestMultipleRetryMethod() {
 	const RetryAttempt = 2
-	suite.policy.SetRetry(RetryAttempt)
+	suite.policy = suite.policy.SetRetry(RetryAttempt)
 	var errorMethod = func() error {
 		return ExpectedError
 	}
@@ -49,7 +49,7 @@ func (suite *RetryMethodTestSuite) TestMultipleRetryMethod() {
 }
 
 func (suite *RetryMethodTestSuite) TestInfiniteRetryMethod() {
-	suite.policy.SetInfiniteRetry(true)
+	suite.policy = suite.policy.SetInfiniteRetry(true)
 	count := 0
 	var errorMethod = func() error {
 		defer func(){

@@ -3,8 +3,8 @@ package gotry
 import (
 	"github.com/stretchr/testify/suite"
 	"github.com/stretchr/testify/assert"
-	"testing"
 	"github.com/stretchr/testify/mock"
+	"testing"
 )
 
 type RetryFuncTestSuite struct {
@@ -18,27 +18,26 @@ func TestRetryFuncSuite(t *testing.T) {
 func (suite *RetryFuncTestSuite) TestSuccessFunc(){
 	var successFunc Func = func() (interface{}, bool, error) {
 		var returnValue= ExpectedReturnValue
-		return returnValue, returnValue > 0, nil
+		return returnValue, true, nil
 	}
-	var returnValue, isReturnValueValid, err = suite.policy.ExecuteFunc(successFunc)
-	assert.Nil(suite.T(), err)
-	assertValidReturnValue(suite, returnValue, isReturnValueValid)
+	funcReturn := suite.policy.ExecuteFunc(successFunc)
+	assert.Nil(suite.T(), funcReturn.Err)
+	assertValidReturnValue(suite, funcReturn.ReturnValue, funcReturn.Valid)
 	assert.False(suite.T(), suite.retried)
 }
 
 func (suite *RetryFuncTestSuite) TestInvalidReturnValueFunc() {
 	var invalidReturnFunc Func = func() (interface{}, bool, error) {
 		var returnValue= ExpectedReturnValue
-		return returnValue, returnValue < 0, nil
+		return returnValue, false, nil
 	}
 	onRetryHook := func(int, interface{}, error) {
 		suite.retried = true
 	}
-	var returnValue, isReturnValueValid, err = suite.policy.ExecuteFuncWithRetryHook(invalidReturnFunc,
-																				   onRetryHook, nil)
-	assert.Nil(suite.T(), err)
-	assert.False(suite.T(), isReturnValueValid, "invalid return value should cause retry")
-	assert.Equal(suite.T(), ExpectedReturnValue, returnValue,
+	funcReturn := suite.policy.ExecuteFuncWithRetryHook(invalidReturnFunc, onRetryHook, nil)
+	assert.Nil(suite.T(), funcReturn.Err)
+	assert.False(suite.T(), funcReturn.Valid, "invalid return value should cause retry")
+	assert.Equal(suite.T(), ExpectedReturnValue, funcReturn.ReturnValue,
 		"invalid return value should be returned")
 	assert.True(suite.T(), suite.retried)
 }
@@ -50,9 +49,9 @@ func (suite *RetryFuncTestSuite) TestErrorFunc() {
 	onRetryHook := func(int, interface{}, error) {
 		suite.retried = true
 	}
-	var returnValue, isReturnValueValid, err = suite.policy.ExecuteFuncWithRetryHook(errorFunc, onRetryHook, nil)
-	assertValidReturnValue(suite, returnValue, isReturnValueValid)
-	assert.Equal(suite.T(), ExpectedError, err)
+	var funcReturn = suite.policy.ExecuteFuncWithRetryHook(errorFunc, onRetryHook, nil)
+	assertValidReturnValue(suite, funcReturn.ReturnValue, funcReturn.Valid)
+	assert.Equal(suite.T(), ExpectedError, funcReturn.Err)
 	assert.True(suite.T(), suite.retried)
 }
 
@@ -63,18 +62,18 @@ func assertValidReturnValue(suite *RetryFuncTestSuite, returnValue interface{}, 
 
 func (suite *RetryFuncTestSuite) TestMultipleRetry() {
 	const RetryAttempt = 2
-	suite.policy.SetRetry(RetryAttempt)
+	suite.policy = suite.policy.SetRetry(RetryAttempt)
 	var errorFunc = func() (interface{}, bool, error) {
 		return ExpectedReturnValue, true, ExpectedError
 	}
 	mockRetry, onRetryHook := prepareMockRetryFuncHook()
-	var _, _, err = suite.policy.ExecuteFuncWithRetryHook(errorFunc, onRetryHook, nil)
-	assert.Equal(suite.T(), ExpectedError, err)
+	var funcReturn = suite.policy.ExecuteFuncWithRetryHook(errorFunc, onRetryHook, nil)
+	assert.Equal(suite.T(), ExpectedError, funcReturn.Err)
 	assertTwiceRetryFuncCall(mockRetry, suite)
 }
 
 func (suite *RetryFuncTestSuite) TestInfiniteRetry() {
-	suite.policy.SetInfiniteRetry(true)
+	suite.policy = suite.policy.SetInfiniteRetry(true)
 	invokeCount := 0
 	var errorFunc = func() (interface{}, bool, error) {
 		defer func(){
@@ -86,9 +85,9 @@ func (suite *RetryFuncTestSuite) TestInfiniteRetry() {
 		return ExpectedReturnValue, true, nil
 	}
 	mockRetry, onRetryHook := prepareMockRetryFuncHook()
-	var returnValue, isReturnValueValid, err = suite.policy.ExecuteFuncWithRetryHook(errorFunc, onRetryHook, nil)
-	assert.Nil(suite.T(), err)
-	assertValidReturnValue(suite, returnValue, isReturnValueValid)
+	var funcReturn = suite.policy.ExecuteFuncWithRetryHook(errorFunc, onRetryHook, nil)
+	assert.Nil(suite.T(), funcReturn.Err)
+	assertValidReturnValue(suite, funcReturn.ReturnValue, funcReturn.Valid)
 	assertTwiceRetryFuncCall(mockRetry, suite)
 }
 
@@ -105,7 +104,7 @@ func (suite *RetryFuncTestSuite) TestPanicFunc() {
 }
 
 func (suite *RetryFuncTestSuite) TestOnPanicEventEvenNoRetryOnPanicFunc() {
-	suite.policy.SetRetryOnPanic(false)
+	suite.policy = suite.policy.SetRetryOnPanic(false)
 	mockRetry, onPanic := prepareMockOnPanicFuncWithoutOnError()
 	defer func (){
 		unexpectedRuntimeError := recover()
