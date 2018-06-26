@@ -31,7 +31,7 @@ func (suite *RetryMethodTestSuite) TestErrorMethod() {
 	var onRetryHook OnMethodErrorRetry = func(int, error) {
 		suite.retried = true
 	}
-	var err = suite.policy.ExecuteMethodWithRetryHook(errorMethod, onRetryHook, nil)
+	var err = suite.policy.SetOnMethodRetry(onRetryHook).ExecuteMethod(errorMethod)
 	assert.Equal(suite.T(), ExpectedError, err)
 	assert.True(suite.T(), suite.retried)
 }
@@ -43,7 +43,7 @@ func (suite *RetryMethodTestSuite) TestMultipleRetryMethod() {
 		return ExpectedError
 	}
 	mockRetry, onRetryHook := prepareMockRetryMethodHook()
-	var err = suite.policy.ExecuteMethodWithRetryHook(errorMethod, onRetryHook, nil)
+	var err = suite.policy.SetOnMethodRetry(onRetryHook).ExecuteMethod(errorMethod)
 	assert.Equal(suite.T(), ExpectedError, err)
 	assertTwiceRetryMethodCall(mockRetry, suite)
 }
@@ -61,7 +61,7 @@ func (suite *RetryMethodTestSuite) TestInfiniteRetryMethod() {
 		return nil
 	}
 	mockRetry, onRetryHook := prepareMockRetryMethodHook()
-	var err = suite.policy.ExecuteMethodWithRetryHook(errorMethod, onRetryHook, nil)
+	var err = suite.policy.SetOnMethodRetry(onRetryHook).ExecuteMethod(errorMethod)
 	assert.Nil(suite.T(), err)
 	assertTwiceRetryMethodCall(mockRetry, suite)
 }
@@ -72,7 +72,7 @@ func (suite *RetryMethodTestSuite) TestOnPanicMethodWithoutOnError() {
 		_ = recover()
 		mockRetry.AssertCalled(suite.T(), OnPanicMethodName, PanicContent)
 	}()
-	suite.policy.ExecuteMethodWithRetryHook(panicMethod, nil, onPanic)
+	suite.policy.SetOnPanic(onPanic).ExecuteMethod(panicMethod)
 }
 
 func (suite *RetryMethodTestSuite) TestOnPanicMethodWithOnError() {
@@ -81,7 +81,7 @@ func (suite *RetryMethodTestSuite) TestOnPanicMethodWithOnError() {
 		_ = recover()
 		mockRetry.AssertNotCalled(suite.T(), OnMethodErrorRetryMethodName, mock.Anything, mock.Anything)
 	}()
-	suite.policy.ExecuteMethodWithRetryHook(panicMethod, onError, onPanic)
+	suite.policy.SetOnMethodRetry(onError).SetOnPanic(onPanic).ExecuteMethod(panicMethod)
 }
 
 func prepareMockOnPanicMethodWithoutOnError() (*mockRetry, func(interface{})){
