@@ -15,7 +15,7 @@ const PanicContent ="test panic"
 var panicMethod = func() error {
 	panic(PanicContent)
 }
-var panicFunc = func() (interface{}, bool, error) {
+var panicFunc = func() FuncReturn {
 	panic(PanicContent)
 }
 

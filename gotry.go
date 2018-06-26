@@ -1,6 +1,6 @@
 package gotry
 
-type Func func() (returnValue interface{}, isReturnValueValid bool, err error)
+type Func func() FuncReturn
 type OnFuncErrorRetry func(retryCount int, returnValue interface{}, err error)
 type Method func() error
 type OnMethodErrorRetry func(retryCount int, err error)
@@ -67,7 +67,7 @@ func(policy *policy) ExecuteFuncWithRetryHook(funcBody Func, onRetry OnFuncError
 	}
 	for i := 0; policy.continueRetry(retryAttempt(i)); i++ {
 		panicOccurred = false
-		var recoverableMethod = func() (returnValue interface{}, isReturnValueValid bool, err error) {
+		var recoverableMethod = func() FuncReturn {
 			defer func() {
 				err := recover()
 				if err != nil {
@@ -77,7 +77,7 @@ func(policy *policy) ExecuteFuncWithRetryHook(funcBody Func, onRetry OnFuncError
 			}()
 			return funcBody()
 		}
-		funcReturn.ReturnValue, funcReturn.Valid, funcReturn.Err = recoverableMethod()
+		funcReturn = recoverableMethod()
 		if funcReturn.Err == nil && funcReturn.Valid && !panicOccurred {
 			return
 		}
@@ -97,9 +97,9 @@ func (policy *policy) ExecuteMethod(methodBody Method) error {
 }
 
 func(policy *policy) ExecuteMethodWithRetryHook(methodBody Method, onErrorRetry OnMethodErrorRetry, onPanic OnPanic) error {
-	function := func() (interface{}, bool, error){
+	function := func() FuncReturn{
 		var err = methodBody()
-		return nil, true, err
+		return FuncReturn{nil, true, err}
 	}
 
 	onFuncRetry := func(retryCount int, _ interface{}, err error){

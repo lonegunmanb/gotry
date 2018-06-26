@@ -16,9 +16,9 @@ func TestRetryFuncSuite(t *testing.T) {
 }
 
 func (suite *RetryFuncTestSuite) TestSuccessFunc(){
-	var successFunc Func = func() (interface{}, bool, error) {
+	var successFunc Func = func() FuncReturn {
 		var returnValue= ExpectedReturnValue
-		return returnValue, true, nil
+		return FuncReturn{returnValue, true, nil}
 	}
 	funcReturn := suite.policy.ExecuteFunc(successFunc)
 	assert.Nil(suite.T(), funcReturn.Err)
@@ -27,9 +27,9 @@ func (suite *RetryFuncTestSuite) TestSuccessFunc(){
 }
 
 func (suite *RetryFuncTestSuite) TestInvalidReturnValueFunc() {
-	var invalidReturnFunc Func = func() (interface{}, bool, error) {
-		var returnValue= ExpectedReturnValue
-		return returnValue, false, nil
+	var invalidReturnFunc Func = func() FuncReturn {
+		var returnValue = ExpectedReturnValue
+		return FuncReturn{returnValue, false, nil}
 	}
 	onRetryHook := func(int, interface{}, error) {
 		suite.retried = true
@@ -43,8 +43,8 @@ func (suite *RetryFuncTestSuite) TestInvalidReturnValueFunc() {
 }
 
 func (suite *RetryFuncTestSuite) TestErrorFunc() {
-	var errorFunc = func() (interface{}, bool, error) {
-		return ExpectedReturnValue, true, ExpectedError
+	var errorFunc = func() FuncReturn {
+		return FuncReturn{ExpectedReturnValue, true, ExpectedError}
 	}
 	onRetryHook := func(int, interface{}, error) {
 		suite.retried = true
@@ -63,8 +63,8 @@ func assertValidReturnValue(suite *RetryFuncTestSuite, returnValue interface{}, 
 func (suite *RetryFuncTestSuite) TestMultipleRetry() {
 	const RetryAttempt = 2
 	suite.policy = suite.policy.SetRetry(RetryAttempt)
-	var errorFunc = func() (interface{}, bool, error) {
-		return ExpectedReturnValue, true, ExpectedError
+	var errorFunc = func() FuncReturn {
+		return FuncReturn{ExpectedReturnValue, true, ExpectedError}
 	}
 	mockRetry, onRetryHook := prepareMockRetryFuncHook()
 	var funcReturn = suite.policy.ExecuteFuncWithRetryHook(errorFunc, onRetryHook, nil)
@@ -75,14 +75,14 @@ func (suite *RetryFuncTestSuite) TestMultipleRetry() {
 func (suite *RetryFuncTestSuite) TestInfiniteRetry() {
 	suite.policy = suite.policy.SetInfiniteRetry(true)
 	invokeCount := 0
-	var errorFunc = func() (interface{}, bool, error) {
+	var errorFunc = func() FuncReturn {
 		defer func(){
 			invokeCount++
 		}()
 		if invokeCount < 2 {
-			return ExpectedReturnValue, true, ExpectedError
+			return FuncReturn{ExpectedReturnValue, true, ExpectedError}
 		}
-		return ExpectedReturnValue, true, nil
+		return FuncReturn{ExpectedReturnValue, true, nil}
 	}
 	mockRetry, onRetryHook := prepareMockRetryFuncHook()
 	var funcReturn = suite.policy.ExecuteFuncWithRetryHook(errorFunc, onRetryHook, nil)
