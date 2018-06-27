@@ -128,7 +128,7 @@ func (suite *RetryFuncTestSuite) TestOnPanicFuncWithNoRetryEvent(){
 }
 
 func (suite *RetryFuncTestSuite) TestNotRetryOnPanicFunc() {
-	suite.policy.SetRetryOnPanic(false)
+	suite.policy = suite.policy.SetRetryOnPanic(false)
 	defer func(){
 		err := recover()
 		assert.Equal(suite.T(), PanicContent, err)
