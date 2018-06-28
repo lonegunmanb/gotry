@@ -40,7 +40,7 @@ func NewPolicy() Policy {
 
 func (policy policy) SetRetry(retryLimit int) Policy{
 	policy.continueRetry = func(retryAttempt int) bool {
-		return retryAttempt < retryLimit
+		return retryAttempt <= retryLimit
 	}
 	return &policy
 }
@@ -74,20 +74,20 @@ func (policy policy) SetOnPanic(onPanic OnPanic) Policy{
 
 func(policy *policy) ExecuteFunc(funcBody Func) (funcReturn FuncReturn) {
 	panicOccurred := false
-	var wrappedOnPanic OnPanic = func(panicError interface{}){
+	var notifyPanic OnPanic = func(panicError interface{}){
 		panicOccurred = true
 		if policy.onPanic != nil {
 			policy.onPanic(panicError)
 		}
 	}
-	for i := 0; policy.continueRetry(retryAttempt(i)); i++ {
+	for i := 0; policy.continueRetry(i); i++ {
 		panicOccurred = false
 		var recoverableMethod = func() FuncReturn {
 			defer func() {
-				err := recover()
-				if err != nil {
-					wrappedOnPanic(err)
-					panicIfExceedLimit(policy, i, err)
+				panicErr := recover()
+				if panicErr != nil {
+					notifyPanic(panicErr)
+					panicIfExceedLimit(policy, retryAttempt(i), panicErr)
 				}
 			}()
 			return funcBody()
@@ -96,15 +96,15 @@ func(policy *policy) ExecuteFunc(funcBody Func) (funcReturn FuncReturn) {
 		if funcReturn.Err == nil && funcReturn.Valid && !panicOccurred {
 			return
 		}
-		if policy.onFuncRetry != nil && !panicOccurred && policy.continueRetry(i) {
-			policy.onFuncRetry(i+1, funcReturn.ReturnValue, funcReturn.Err)
+		if policy.onFuncRetry != nil && !panicOccurred && policy.continueRetry(retryAttempt(i)) {
+			policy.onFuncRetry(retryAttempt(i), funcReturn.ReturnValue, funcReturn.Err)
 		}
 	}
 	return
 }
 
 func retryAttempt(i int) int {
-	return i - 1
+	return i+1
 }
 
 func(policy *policy) ExecuteMethod(methodBody Method) error {
