@@ -22,12 +22,12 @@ func (suite *RetryFuncTestSuite) TestSuccessFunc(){
 	}
 	mockRetry := &mockRetry{}
 	onError := func(retryAttempt int, returnValue interface{}, err error) {
-		mockRetry.OnFuncErrorRetry(retryAttempt, returnValue, err)
+		mockRetry.OnFuncError(retryAttempt, returnValue, err)
 	}
 	funcReturn := suite.policy.SetOnFuncRetry(onError).ExecuteFunc(successFunc)
 	assert.Nil(suite.T(), funcReturn.Err)
 	assertValidReturnValue(suite, funcReturn.ReturnValue, funcReturn.Valid)
-	mockRetry.AssertNotCalled(suite.T(), OnFuncErrorRetryMethodName)
+	mockRetry.AssertNotCalled(suite.T(), OnFuncErrorMethodName)
 }
 
 func (suite *RetryFuncTestSuite) TestInvalidReturnValueFunc() {
@@ -37,16 +37,18 @@ func (suite *RetryFuncTestSuite) TestInvalidReturnValueFunc() {
 	}
 	mockRetry := &mockRetry{}
 	onError := func(retryAttempt int, returnValue interface{}, err error) {
-		mockRetry.OnFuncErrorRetry(retryAttempt, returnValue, err)
+		mockRetry.OnFuncError(retryAttempt, returnValue, err)
 	}
-	mockRetry.On(OnFuncErrorRetryMethodName, 1, ExpectedReturnValue, nil).Return()
+	mockRetry.On(OnFuncErrorMethodName, 0, ExpectedReturnValue, nil).Return()
+	mockRetry.On(OnFuncErrorMethodName, 1, ExpectedReturnValue, nil).Return()
 	funcReturn := suite.policy.SetOnFuncRetry(onError).ExecuteFunc(invalidReturnFunc)
 	assert.Nil(suite.T(), funcReturn.Err)
 	assert.False(suite.T(), funcReturn.Valid, "invalid return value should cause retry")
 	assert.Equal(suite.T(), ExpectedReturnValue, funcReturn.ReturnValue,
 		"invalid return value should be returned")
-	mockRetry.AssertCalled(suite.T(), OnFuncErrorRetryMethodName, 1, ExpectedReturnValue, nil)
-	mockRetry.AssertNumberOfCalls(suite.T(), OnFuncErrorRetryMethodName, 1)
+	mockRetry.AssertCalled(suite.T(), OnFuncErrorMethodName, 0, ExpectedReturnValue, nil)
+	mockRetry.AssertCalled(suite.T(), OnFuncErrorMethodName, 1, ExpectedReturnValue, nil)
+	mockRetry.AssertNumberOfCalls(suite.T(), OnFuncErrorMethodName, 2)
 }
 
 func (suite *RetryFuncTestSuite) TestErrorFunc() {
@@ -155,9 +157,32 @@ func (suite *RetryFuncTestSuite) TestOnPanicShouldNotCallOnErrorEvent() {
 	suite.policy = suite.policy.SetOnFuncRetry(onError).SetOnPanic(onPanic)
 	defer func(){
 		_ = recover()
-		mockRetry.AssertNotCalled(suite.T(), OnFuncErrorRetryMethodName, mock.Anything, mock.Anything, mock.Anything)
+		mockRetry.AssertNotCalled(suite.T(), OnFuncErrorMethodName, mock.Anything, mock.Anything, mock.Anything)
 	}()
 	suite.policy.ExecuteFunc(panicFunc)
+}
+
+func (suite *RetryFuncTestSuite) TestOnRetryPredicate() {
+	retried := false
+	predicate := func()bool{
+		defer func(){
+			retried = true
+		}()
+		return !retried
+	}
+	var invalidReturnFunc Func = func() FuncReturn {
+		var returnValue = ExpectedReturnValue
+		return FuncReturn{returnValue, false, nil}
+	}
+	suite.policy = suite.policy.SetRetryPredicate(predicate)
+	mockRetry := &mockRetry{}
+	onError := func(retryAttempt int, returnValue interface{}, err error) {
+		mockRetry.OnFuncError(retryAttempt, returnValue, err)
+	}
+	mockRetry.On(OnFuncErrorMethodName, 0, ExpectedReturnValue, nil).Return()
+	_ = suite.policy.SetOnFuncRetry(onError).ExecuteFunc(invalidReturnFunc)
+	assert.True(suite.T(), retried)
+	mockRetry.AssertNumberOfCalls(suite.T(), OnFuncErrorMethodName, 1)
 }
 
 func prepareMockOnPanicFuncWithoutOnError() (*mockRetry, func(interface{})){
@@ -169,11 +194,11 @@ func prepareMockOnPanicFuncWithoutOnError() (*mockRetry, func(interface{})){
 	return mockRetry, onPanicHook
 }
 
-func prepareMockOnPanicFuncWithOnError() (*mockRetry, OnFuncErrorRetry, OnPanic){
+func prepareMockOnPanicFuncWithOnError() (*mockRetry, OnFuncError, OnPanic){
 	mockRetry, onPanic := prepareMockOnPanicFuncWithoutOnError()
-	mockRetry.On(OnFuncErrorRetryMethodName, mock.Anything, mock.Anything, mock.Anything).Return()
+	mockRetry.On(OnFuncErrorMethodName, mock.Anything, mock.Anything, mock.Anything).Return()
 	onErrorRetry := func(retryCount int, returnValue interface{}, err error){
-		mockRetry.OnFuncErrorRetry(0, nil, nil)
+		mockRetry.OnFuncError(0, nil, nil)
 	}
 	return mockRetry, onErrorRetry, onPanic
 }
@@ -181,7 +206,7 @@ func prepareMockOnPanicFuncWithOnError() (*mockRetry, OnFuncErrorRetry, OnPanic)
 func prepareMockWithOnError(expectingRetryCount int)(*mockRetry, func(retryAttempt int, returnValue interface{}, err error)) {
 	mockRetry := &mockRetry{}
 	onRetryHook := func(retryAttempt int, returnValue interface{}, err error) {
-		mockRetry.OnFuncErrorRetry(retryAttempt, returnValue, err)
+		mockRetry.OnFuncError(retryAttempt, returnValue, err)
 	}
 	setupFuncRetry(mockRetry, expectingRetryCount)
 	return mockRetry, onRetryHook
@@ -189,12 +214,12 @@ func prepareMockWithOnError(expectingRetryCount int)(*mockRetry, func(retryAttem
 
 func assertCallOnFuncError(mock *mockRetry, suite *RetryFuncTestSuite, expectingCallCount int){
 	for i:=0; i < expectingCallCount; i++ {
-		mock.AssertCalled(suite.T(), OnFuncErrorRetryMethodName, i+1, ExpectedReturnValue, ExpectedError)
+		mock.AssertCalled(suite.T(), OnFuncErrorMethodName, i, ExpectedReturnValue, ExpectedError)
 	}
 }
 
 func setupFuncRetry(mockRetry *mockRetry, expectingRetryCount int) {
-	for i:=0; i < expectingRetryCount; i++{
-		mockRetry.On(OnFuncErrorRetryMethodName, i+1, ExpectedReturnValue, ExpectedError).Return()
+	for i:=0; i < expectingRetryCount+1; i++{
+		mockRetry.On(OnFuncErrorMethodName, i, ExpectedReturnValue, ExpectedError).Return()
 	}
 }

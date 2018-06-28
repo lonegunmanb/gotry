@@ -1,9 +1,9 @@
 package gotry
 
 type Func func() FuncReturn
-type OnFuncErrorRetry func(retryCount int, returnValue interface{}, err error)
+type OnFuncError func(retriedCount int, returnValue interface{}, err error)
 type Method func() error
-type OnMethodErrorRetry func(retryCount int, err error)
+type OnMethodError func(retriedCount int, err error)
 type OnPanic func(panicError interface{})
 
 type FuncReturn struct {
@@ -15,20 +15,21 @@ type FuncReturn struct {
 type Policy interface {
 	SetRetry(retryLimit int) Policy
 	SetInfiniteRetry() Policy
+	SetRetryPredicate(predicate func()bool) Policy
 	SetRetryOnPanic(retryOnPanic bool) Policy
-	SetOnFuncRetry(onRetry OnFuncErrorRetry) Policy
-	SetOnMethodRetry(onRetry OnMethodErrorRetry) Policy
+	SetOnFuncRetry(onRetry OnFuncError) Policy
+	SetOnMethodRetry(onRetry OnMethodError) Policy
 	SetOnPanic(onPanic OnPanic) Policy
 	ExecuteFunc(funcBody Func) FuncReturn
 	ExecuteMethod(methodBody Method) error
 }
 
 type policy struct{
-	retryOnPanic bool
+	retryOnPanic  bool
 	continueRetry func(int) bool
-	onFuncRetry OnFuncErrorRetry
-	onMethodRetry OnMethodErrorRetry
-	onPanic OnPanic
+	onFuncError   OnFuncError
+	onMethodError OnMethodError
+	onPanic       OnPanic
 }
 
 func NewPolicy() Policy {
@@ -52,18 +53,25 @@ func (policy policy) SetInfiniteRetry() Policy {
 	return &policy
 }
 
+func (policy policy) SetRetryPredicate(predicate func()bool) Policy{
+	policy.continueRetry = func(int)bool {
+		return predicate()
+	}
+	return &policy
+}
+
 func (policy policy) SetRetryOnPanic(retryOnPanic bool) Policy{
 	policy.retryOnPanic = retryOnPanic
 	return &policy
 }
 
-func (policy policy) SetOnFuncRetry(onRetry OnFuncErrorRetry) Policy{
-	policy.onFuncRetry = onRetry
+func (policy policy) SetOnFuncRetry(onRetry OnFuncError) Policy{
+	policy.onFuncError = onRetry
 	return &policy
 }
 
-func (policy policy) SetOnMethodRetry(onRetry OnMethodErrorRetry) Policy{
-	policy.onMethodRetry = onRetry
+func (policy policy) SetOnMethodRetry(onRetry OnMethodError) Policy{
+	policy.onMethodError = onRetry
 	return &policy
 }
 
@@ -87,7 +95,7 @@ func(policy *policy) ExecuteFunc(funcBody Func) (funcReturn FuncReturn) {
 				panicErr := recover()
 				if panicErr != nil {
 					notifyPanic(panicErr)
-					panicIfExceedLimit(policy, retryAttempt(i), panicErr)
+					panicIfExceedLimit(policy, i+1, panicErr)
 				}
 			}()
 			return funcBody()
@@ -96,15 +104,11 @@ func(policy *policy) ExecuteFunc(funcBody Func) (funcReturn FuncReturn) {
 		if funcReturn.Err == nil && funcReturn.Valid && !panicOccurred {
 			return
 		}
-		if policy.onFuncRetry != nil && !panicOccurred && policy.continueRetry(retryAttempt(i)) {
-			policy.onFuncRetry(retryAttempt(i), funcReturn.ReturnValue, funcReturn.Err)
+		if policy.onFuncError != nil && !panicOccurred {
+			policy.onFuncError(i, funcReturn.ReturnValue, funcReturn.Err)
 		}
 	}
 	return
-}
-
-func retryAttempt(i int) int {
-	return i+1
 }
 
 func(policy *policy) ExecuteMethod(methodBody Method) error {
@@ -113,9 +117,9 @@ func(policy *policy) ExecuteMethod(methodBody Method) error {
 		return FuncReturn{nil, true, err}
 	}
 	var wrappedPolicy Policy = policy
-	if policy.onMethodRetry != nil {
+	if policy.onMethodError != nil {
 		wrappedPolicy = policy.SetOnFuncRetry(func(retryCount int, _ interface{}, err error){
-			policy.onMethodRetry(retryCount, err)
+			policy.onMethodError(retryCount, err)
 		})
 	}
 

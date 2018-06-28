@@ -8,8 +8,8 @@ import (
 
 const ExpectedReturnValue = 1
 const OnPanicMethodName = "OnPanic"
-const OnMethodErrorRetryMethodName = "OnMethodErrorRetry"
-const OnFuncErrorRetryMethodName = "OnFuncErrorRetry"
+const OnMethodErrorMethodName = "OnMethodError"
+const OnFuncErrorMethodName = "OnFuncError"
 var ExpectedError = errors.New("expectedError")
 const PanicContent ="test panic"
 var panicMethod = func() error {
@@ -32,11 +32,11 @@ type mockRetry struct {
 	mock.Mock
 }
 
-func (hook *mockRetry) OnFuncErrorRetry(retryAttempt int, returnValue interface{}, err error){
+func (hook *mockRetry) OnFuncError(retryAttempt int, returnValue interface{}, err error){
 	hook.Called(retryAttempt, returnValue, err)
 }
 
-func (hook *mockRetry) OnMethodErrorRetry(retryAttempt int, err error) {
+func (hook *mockRetry) OnMethodError(retryAttempt int, err error) {
 	hook.Called(retryAttempt, err)
 }
 
