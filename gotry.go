@@ -14,7 +14,7 @@ type FuncReturn struct {
 
 type Policy interface {
 	SetRetry(retryLimit int) Policy
-	SetInfiniteRetry(isInfinite bool) Policy
+	SetInfiniteRetry() Policy
 	SetRetryOnPanic(retryOnPanic bool) Policy
 	SetOnFuncRetry(onRetry OnFuncErrorRetry) Policy
 	SetOnMethodRetry(onRetry OnMethodErrorRetry) Policy
@@ -45,7 +45,7 @@ func (policy policy) SetRetry(retryLimit int) Policy{
 	return &policy
 }
 
-func (policy policy) SetInfiniteRetry(isInfinite bool) Policy{
+func (policy policy) SetInfiniteRetry() Policy {
 	policy.continueRetry = func(retryAttempt int) bool {
 		return true
 	}
@@ -112,10 +112,12 @@ func(policy *policy) ExecuteMethod(methodBody Method) error {
 		var err = methodBody()
 		return FuncReturn{nil, true, err}
 	}
-
-	wrappedPolicy := policy.SetOnFuncRetry(func(retryCount int, _ interface{}, err error){
-		policy.onMethodRetry(retryCount, err)
-	})
+	var wrappedPolicy Policy = policy
+	if policy.onMethodRetry != nil {
+		wrappedPolicy = policy.SetOnFuncRetry(func(retryCount int, _ interface{}, err error){
+			policy.onMethodRetry(retryCount, err)
+		})
+	}
 
 	var funcReturn = wrappedPolicy.ExecuteFunc(function)
 	return funcReturn.Err

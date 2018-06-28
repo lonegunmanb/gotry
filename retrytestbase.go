@@ -22,12 +22,10 @@ var panicFunc = func() FuncReturn {
 type TryTestBaseSuite struct {
 	suite.Suite
 	policy Policy
-	retried bool
 }
 
 func (suite *TryTestBaseSuite) SetupTest() {
 	suite.policy = NewPolicy().SetRetry(1)
-	suite.retried = false
 }
 
 type mockRetry struct {
