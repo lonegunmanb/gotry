@@ -25,7 +25,7 @@ type TryTestBaseSuite struct {
 }
 
 func (suite *TryTestBaseSuite) SetupTest() {
-	suite.policy = NewPolicy().SetRetry(1)
+	suite.policy = NewPolicy().WithRetryLimit(1)
 }
 
 type mockRetry struct {

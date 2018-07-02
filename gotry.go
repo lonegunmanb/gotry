@@ -13,20 +13,20 @@ type FuncReturn struct {
 }
 
 type Policy interface {
-	SetRetry(retryLimit int) Policy
-	SetInfiniteRetry() Policy
-	SetRetryPredicate(predicate func()bool) Policy
-	SetRetryOnPanic(retryOnPanic bool) Policy
-	SetOnFuncRetry(onRetry OnFuncError) Policy
-	SetOnMethodRetry(onRetry OnMethodError) Policy
-	SetOnPanic(onPanic OnPanic) Policy
+	WithRetryLimit(retryLimit int) Policy
+	WithInfiniteRetry() Policy
+	WithRetryPredicate(predicate func()bool) Policy
+	WithRetryOnPanic(retryOnPanic bool) Policy
+	WithOnFuncRetry(onRetry OnFuncError) Policy
+	WithOnMethodRetry(onRetry OnMethodError) Policy
+	WithOnPanic(onPanic OnPanic) Policy
 	ExecuteFunc(funcBody Func) FuncReturn
 	ExecuteMethod(methodBody Method) error
 }
 
 type policy struct{
 	retryOnPanic  bool
-	continueRetry func(int) bool
+	shouldRetry   func(int) bool
 	onFuncError   OnFuncError
 	onMethodError OnMethodError
 	onPanic       OnPanic
@@ -34,101 +34,135 @@ type policy struct{
 
 func NewPolicy() Policy {
 	return &policy{
-		retryOnPanic:  true,
-		continueRetry: func(retryAttempt int) bool { return false },
+		retryOnPanic: true,
+		shouldRetry:  func(retriedCount int) bool { return false },
 	}
 }
 
-func (policy policy) SetRetry(retryLimit int) Policy{
-	policy.continueRetry = func(retryAttempt int) bool {
-		return retryAttempt <= retryLimit
+func (policy policy) WithRetryLimit(retryLimit int) Policy{
+	policy.shouldRetry = func(retriedCount int) bool {
+		return retriedCount <= retryLimit
 	}
 	return &policy
 }
 
-func (policy policy) SetInfiniteRetry() Policy {
-	policy.continueRetry = func(retryAttempt int) bool {
+func (policy policy) WithInfiniteRetry() Policy {
+	policy.shouldRetry = func(retriedCount int) bool {
 		return true
 	}
 	return &policy
 }
 
-func (policy policy) SetRetryPredicate(predicate func()bool) Policy{
-	policy.continueRetry = func(int)bool {
+func (policy policy) WithRetryPredicate(predicate func()bool) Policy{
+	policy.shouldRetry = func(int)bool {
 		return predicate()
 	}
 	return &policy
 }
 
-func (policy policy) SetRetryOnPanic(retryOnPanic bool) Policy{
+func (policy policy) WithRetryOnPanic(retryOnPanic bool) Policy{
 	policy.retryOnPanic = retryOnPanic
 	return &policy
 }
 
-func (policy policy) SetOnFuncRetry(onRetry OnFuncError) Policy{
+func (policy policy) WithOnFuncRetry(onRetry OnFuncError) Policy{
 	policy.onFuncError = onRetry
 	return &policy
 }
 
-func (policy policy) SetOnMethodRetry(onRetry OnMethodError) Policy{
+func (policy policy) WithOnMethodRetry(onRetry OnMethodError) Policy{
 	policy.onMethodError = onRetry
 	return &policy
 }
 
-func (policy policy) SetOnPanic(onPanic OnPanic) Policy{
+func (policy policy) WithOnPanic(onPanic OnPanic) Policy{
 	policy.onPanic = onPanic
 	return &policy
 }
 
 func(policy *policy) ExecuteFunc(funcBody Func) (funcReturn FuncReturn) {
-	panicOccurred := false
-	var notifyPanic OnPanic = func(panicError interface{}){
-		panicOccurred = true
-		if policy.onPanic != nil {
-			policy.onPanic(panicError)
+	notifyPanic := policy.buildNotifyPanicMethod()
+	for retried := 0; policy.shouldRetry(retried); retried++ {
+		var recoverableBody = policy.wrapFuncBodyWithPanicNotify(notifyPanic, funcBody, retried)
+		var panicOccurred bool
+		funcReturn, panicOccurred = recoverableBody()
+		if panicOccurred {
+			continue
 		}
-	}
-	for i := 0; policy.continueRetry(i); i++ {
-		panicOccurred = false
-		var recoverableMethod = func() FuncReturn {
-			defer func() {
-				panicErr := recover()
-				if panicErr != nil {
-					notifyPanic(panicErr)
-					panicIfExceedLimit(policy, i+1, panicErr)
-				}
-			}()
-			return funcBody()
-		}
-		funcReturn = recoverableMethod()
-		if funcReturn.Err == nil && funcReturn.Valid && !panicOccurred {
+		if success(funcReturn) {
 			return
 		}
-		if policy.onFuncError != nil && !panicOccurred {
-			policy.onFuncError(i, funcReturn.ReturnValue, funcReturn.Err)
-		}
+		policy.onError(retried, funcReturn)
 	}
 	return
 }
 
-func(policy *policy) ExecuteMethod(methodBody Method) error {
-	function := func() FuncReturn{
-		var err = methodBody()
-		return FuncReturn{nil, true, err}
+func (policy *policy) wrapFuncBodyWithPanicNotify(notifyPanic OnPanic, funcBody Func, i int)(func() (FuncReturn, bool)) {
+	return func() (funcReturn FuncReturn, panicOccurred bool) {
+		panicOccurred = false
+		defer func() {
+			panicErr := recover()
+			if panicErr != nil {
+				panicOccurred = true
+				notifyPanic(panicErr)
+				panicIfExceedLimit(policy,
+					nextIterationBecauseDeferExecuteAtLastSoIShouldIncreaseToJudgeIfPanicNeeded(i),
+					panicErr)
+			}
+		}()
+		funcReturn = funcBody()
+		return
 	}
+}
+
+func (policy *policy) buildNotifyPanicMethod() OnPanic {
+	return func(panicError interface{}) {
+		if policy.onPanic != nil {
+			policy.onPanic(panicError)
+		}
+	}
+}
+
+func (policy *policy) onError(retryAttempted int, funcReturn FuncReturn) {
+	if policy.onFuncError != nil{
+		policy.onFuncError(retryAttempted, funcReturn.ReturnValue, funcReturn.Err)
+	}
+}
+
+func success(funcReturn FuncReturn) bool {
+	return funcReturn.Err == nil && funcReturn.Valid
+}
+
+func nextIterationBecauseDeferExecuteAtLastSoIShouldIncreaseToJudgeIfPanicNeeded(i int) int {
+	return i + 1
+}
+
+func(policy *policy) ExecuteMethod(methodBody Method) error {
+	function := methodBody.convertToFunc()
 	var wrappedPolicy Policy = policy
 	if policy.onMethodError != nil {
-		wrappedPolicy = policy.SetOnFuncRetry(func(retryCount int, _ interface{}, err error){
-			policy.onMethodError(retryCount, err)
-		})
+		wrappedPolicy = policy.wireOnFuncErrorToOnMethodError()
 	}
 
 	var funcReturn = wrappedPolicy.ExecuteFunc(function)
 	return funcReturn.Err
 }
 
+func (policy *policy) wireOnFuncErrorToOnMethodError() Policy {
+	return policy.WithOnFuncRetry(func(retryCount int, _ interface{}, err error) {
+		policy.onMethodError(retryCount, err)
+	})
+}
+
+func (methodBody Method) convertToFunc() (func() FuncReturn){
+	return func() FuncReturn{
+		var err = methodBody()
+		return FuncReturn{nil, true, err}
+	}
+}
+
 func panicIfExceedLimit(policy *policy, i int, err interface{}) {
-	if !(policy.retryOnPanic && policy.continueRetry(i)) {
+	if !(policy.retryOnPanic && policy.shouldRetry(i)) {
 		panic(err)
 	}
 }
