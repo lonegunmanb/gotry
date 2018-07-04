@@ -15,13 +15,15 @@ type FuncReturn struct {
 type Policy interface {
 	WithRetryLimit(retryLimit int) Policy
 	WithInfiniteRetry() Policy
-	WithRetryPredicate(predicate func()bool) Policy
+	WithRetryPredicate(predicate func(int)bool) Policy
 	WithRetryOnPanic(retryOnPanic bool) Policy
 	WithOnFuncRetry(onRetry OnFuncError) Policy
 	WithOnMethodRetry(onRetry OnMethodError) Policy
 	WithOnPanic(onPanic OnPanic) Policy
-	ExecuteFunc(funcBody Func) FuncReturn
-	ExecuteMethod(methodBody Method) error
+	TryFunc(funcBody Func) FuncReturn
+	TryMethod(methodBody Method) error
+	TryFuncWithCancellation(funcBody func() FuncReturn, cancellation Cancellation) FuncReturn
+	TryMethodWithCancellation(methodBody Method, cancellation Cancellation) error
 }
 
 type policy struct{
@@ -53,9 +55,9 @@ func (policy policy) WithInfiniteRetry() Policy {
 	return &policy
 }
 
-func (policy policy) WithRetryPredicate(predicate func()bool) Policy{
-	policy.shouldRetry = func(int)bool {
-		return predicate()
+func (policy policy) WithRetryPredicate(predicate func(int)bool) Policy{
+	policy.shouldRetry = func(retriedCount int)bool {
+		return predicate(retriedCount)
 	}
 	return &policy
 }
@@ -80,7 +82,11 @@ func (policy policy) WithOnPanic(onPanic OnPanic) Policy{
 	return &policy
 }
 
-func(policy *policy) ExecuteFunc(funcBody Func) (funcReturn FuncReturn) {
+func (policy *policy) TryFuncWithCancellation(funcBody func() FuncReturn, cancellation Cancellation) FuncReturn{
+	return policy.withCancellation(cancellation).TryFunc(funcBody)
+}
+
+func(policy *policy) TryFunc(funcBody Func) (funcReturn FuncReturn) {
 	notifyPanic := policy.buildNotifyPanicMethod()
 	for retried := 0; policy.shouldRetry(retried); retried++ {
 		var recoverableBody = policy.wrapFuncBodyWithPanicNotify(notifyPanic, funcBody, retried)
@@ -137,14 +143,18 @@ func nextIterationBecauseDeferExecuteAtLastSoIShouldIncreaseToJudgeIfPanicNeeded
 	return i + 1
 }
 
-func(policy *policy) ExecuteMethod(methodBody Method) error {
+func (policy *policy) TryMethodWithCancellation(methodBody Method, cancellation Cancellation) error{
+	return policy.withCancellation(cancellation).TryMethod(methodBody)
+}
+
+func(policy *policy) TryMethod(methodBody Method) error {
 	function := methodBody.convertToFunc()
 	var wrappedPolicy Policy = policy
 	if policy.onMethodError != nil {
 		wrappedPolicy = policy.wireOnFuncErrorToOnMethodError()
 	}
 
-	var funcReturn = wrappedPolicy.ExecuteFunc(function)
+	var funcReturn = wrappedPolicy.TryFunc(function)
 	return funcReturn.Err
 }
 
@@ -165,4 +175,11 @@ func panicIfExceedLimit(policy *policy, i int, err interface{}) {
 	if !(policy.retryOnPanic && policy.shouldRetry(i)) {
 		panic(err)
 	}
+}
+
+func (policy policy) withCancellation(cancellation Cancellation) Policy{
+	originPredicate := policy.shouldRetry
+	return policy.WithRetryPredicate(func(retriedCount int) bool {
+		return !cancellation.IsCancellationRequested() && originPredicate(retriedCount)
+	})
 }

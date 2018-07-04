@@ -5,7 +5,12 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"testing"
+	"time"
 )
+
+var errorFunc = func() FuncReturn {
+	return FuncReturn{ExpectedReturnValue, true, ExpectedError}
+}
 
 type RetryFuncTestSuite struct {
 	TryTestBaseSuite
@@ -24,7 +29,7 @@ func (suite *RetryFuncTestSuite) TestSuccessFunc(){
 	onError := func(retryAttempt int, returnValue interface{}, err error) {
 		mockRetry.OnFuncError(retryAttempt, returnValue, err)
 	}
-	funcReturn := suite.policy.WithOnFuncRetry(onError).ExecuteFunc(successFunc)
+	funcReturn := suite.policy.WithOnFuncRetry(onError).TryFunc(successFunc)
 	assert.Nil(suite.T(), funcReturn.Err)
 	assertValidReturnValue(suite, funcReturn.ReturnValue, funcReturn.Valid)
 	mockRetry.AssertNotCalled(suite.T(), OnFuncErrorMethodName)
@@ -41,7 +46,7 @@ func (suite *RetryFuncTestSuite) TestInvalidReturnValueFunc() {
 	}
 	mockRetry.On(OnFuncErrorMethodName, 0, ExpectedReturnValue, nil).Return()
 	mockRetry.On(OnFuncErrorMethodName, 1, ExpectedReturnValue, nil).Return()
-	funcReturn := suite.policy.WithOnFuncRetry(onError).ExecuteFunc(invalidReturnFunc)
+	funcReturn := suite.policy.WithOnFuncRetry(onError).TryFunc(invalidReturnFunc)
 	assert.Nil(suite.T(), funcReturn.Err)
 	assert.False(suite.T(), funcReturn.Valid, "invalid return value should cause retry")
 	assert.Equal(suite.T(), ExpectedReturnValue, funcReturn.ReturnValue,
@@ -52,10 +57,7 @@ func (suite *RetryFuncTestSuite) TestInvalidReturnValueFunc() {
 }
 
 func (suite *RetryFuncTestSuite) TestErrorFunc() {
-	var errorFunc = func() FuncReturn {
-		return FuncReturn{ExpectedReturnValue, true, ExpectedError}
-	}
-	var funcReturn = suite.policy.ExecuteFunc(errorFunc)
+	var funcReturn = suite.policy.TryFunc(errorFunc)
 	assertValidReturnValue(suite, funcReturn.ReturnValue, funcReturn.Valid)
 	assert.Equal(suite.T(), ExpectedError, funcReturn.Err)
 }
@@ -73,7 +75,7 @@ func (suite *RetryFuncTestSuite) TestMultipleRetry() {
 	}
 	mockRetry, onRetryHook := prepareMockWithOnError(2)
 	suite.policy = suite.policy.WithOnFuncRetry(onRetryHook)
-	var funcReturn = suite.policy.ExecuteFunc(errorFunc)
+	var funcReturn = suite.policy.TryFunc(errorFunc)
 	assert.Equal(suite.T(), ExpectedError, funcReturn.Err)
 	assertCallOnFuncError(mockRetry, suite, RetryAttempt)
 }
@@ -92,7 +94,7 @@ func (suite *RetryFuncTestSuite) TestInfiniteRetry() {
 	}
 	mockRetry, onRetryHook := prepareMockWithOnError(2)
 	suite.policy = suite.policy.WithOnFuncRetry(onRetryHook)
-	var funcReturn = suite.policy.ExecuteFunc(errorFunc)
+	var funcReturn = suite.policy.TryFunc(errorFunc)
 	assert.Nil(suite.T(), funcReturn.Err)
 	assertValidReturnValue(suite, funcReturn.ReturnValue, funcReturn.Valid)
 	assertCallOnFuncError(mockRetry, suite, 2)
@@ -108,7 +110,7 @@ func (suite *RetryFuncTestSuite) TestPanicFunc() {
 		//First run invoke once, then retry invoke twice
 		mockRetry.AssertNumberOfCalls(suite.T(), OnPanicMethodName, 2)
 	}()
-	suite.policy.ExecuteFunc(panicFunc)
+	suite.policy.TryFunc(panicFunc)
 }
 
 func (suite *RetryFuncTestSuite) TestOnPanicEventEvenNoRetryOnPanicFunc() {
@@ -121,7 +123,7 @@ func (suite *RetryFuncTestSuite) TestOnPanicEventEvenNoRetryOnPanicFunc() {
 		mockRetry.AssertCalled(suite.T(), OnPanicMethodName, PanicContent)
 		mockRetry.AssertNumberOfCalls(suite.T(), OnPanicMethodName, 1)
 	}()
-	suite.policy.ExecuteFunc(panicFunc)
+	suite.policy.TryFunc(panicFunc)
 }
 
 func (suite *RetryFuncTestSuite) TestOnPanicFuncWithNoRetryEvent(){
@@ -129,7 +131,7 @@ func (suite *RetryFuncTestSuite) TestOnPanicFuncWithNoRetryEvent(){
 		panicError := recover()
 		assert.Equal(suite.T(), PanicContent, panicError)
 	}()
-	suite.policy.ExecuteFunc(panicFunc)
+	suite.policy.TryFunc(panicFunc)
 }
 
 func (suite *RetryFuncTestSuite) TestNotRetryOnPanicFunc() {
@@ -138,7 +140,7 @@ func (suite *RetryFuncTestSuite) TestNotRetryOnPanicFunc() {
 		err := recover()
 		assert.Equal(suite.T(), PanicContent, err)
 	}()
-	suite.policy.ExecuteFunc(panicFunc)
+	suite.policy.TryFunc(panicFunc)
 }
 
 func (suite *RetryFuncTestSuite) TestOnPanicFuncWithoutOnError() {
@@ -149,7 +151,7 @@ func (suite *RetryFuncTestSuite) TestOnPanicFuncWithoutOnError() {
 		mockRetry.AssertCalled(suite.T(), OnPanicMethodName, PanicContent)
 		mockRetry.AssertNumberOfCalls(suite.T(), OnPanicMethodName, 2)
 	}()
-	suite.policy.ExecuteFunc(panicFunc)
+	suite.policy.TryFunc(panicFunc)
 }
 
 func (suite *RetryFuncTestSuite) TestOnPanicShouldNotCallOnErrorEvent() {
@@ -159,12 +161,12 @@ func (suite *RetryFuncTestSuite) TestOnPanicShouldNotCallOnErrorEvent() {
 		_ = recover()
 		mockRetry.AssertNotCalled(suite.T(), OnFuncErrorMethodName, mock.Anything, mock.Anything, mock.Anything)
 	}()
-	suite.policy.ExecuteFunc(panicFunc)
+	suite.policy.TryFunc(panicFunc)
 }
 
 func (suite *RetryFuncTestSuite) TestOnRetryPredicate() {
 	retried := false
-	predicate := func()bool{
+	predicate := func(int)bool{
 		defer func(){
 			retried = true
 		}()
@@ -180,9 +182,29 @@ func (suite *RetryFuncTestSuite) TestOnRetryPredicate() {
 		mockRetry.OnFuncError(retryAttempt, returnValue, err)
 	}
 	mockRetry.On(OnFuncErrorMethodName, 0, ExpectedReturnValue, nil).Return()
-	_ = suite.policy.WithOnFuncRetry(onError).ExecuteFunc(invalidReturnFunc)
+	_ = suite.policy.WithOnFuncRetry(onError).TryFunc(invalidReturnFunc)
 	assert.True(suite.T(), retried)
 	mockRetry.AssertNumberOfCalls(suite.T(), OnFuncErrorMethodName, 1)
+}
+
+func (suite *RetryFuncTestSuite) TestCancelFuncRetry(){
+	var cancellation Cancellation = &cancellation{}
+	suite.policy = suite.policy.WithInfiniteRetry().WithOnFuncRetry(
+		func(retriedCount int, returnValue interface{}, err error){
+			cancellation.Cancel()
+	})
+	errChan := make(chan FuncReturn)
+	defer close(errChan)
+	go func(){
+		errChan <- suite.policy.TryFuncWithCancellation(errorFunc, cancellation)
+	}()
+	select {
+		case funcReturn := <- errChan: {
+			assert.Equal(suite.T(), ExpectedError, funcReturn.Err)
+			assert.True(suite.T(), cancellation.IsCancellationRequested())
+		}
+		case <- time.After(time.Millisecond * 50): assert.Fail(suite.T(), "timeout")
+	}
 }
 
 func prepareMockOnPanicFuncWithoutOnError() (*mockRetry, func(interface{})){
