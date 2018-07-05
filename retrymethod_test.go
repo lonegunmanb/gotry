@@ -12,6 +12,10 @@ type RetryMethodTestSuite struct {
 	TryTestBaseSuite
 }
 
+var successMethod Method = func() error {
+	return nil
+}
+
 var errorMethod Method= func() error {
 	return ExpectedError
 }
@@ -21,9 +25,6 @@ func TestRetryMethodSuite(t *testing.T) {
 }
 
 func (suite *RetryMethodTestSuite) TestSuccessMethod(){
-	var successMethod Method = func() error {
-		return nil
-	}
 	mockRetry := &mockRetry{}
 	onError := func(retryAttempt int, err error) {
 		mockRetry.OnMethodError(retryAttempt, err)
@@ -102,6 +103,39 @@ func (suite *RetryMethodTestSuite) TestCancelMethodRetry(){
 	case err := <- errChan: {
 		assert.Equal(suite.T(), ExpectedError, err)
 		assert.True(suite.T(), cancellation.IsCancellationRequested())
+	}
+	case <- time.After(time.Millisecond * 50): assert.Fail(suite.T(), "timeout")
+	}
+}
+
+func (suite *RetryMethodTestSuite) TestInfiniteRetryMethodWithTimeout(){
+	retried := false
+	suite.policy = suite.policy.WithInfiniteRetry().WithOnFuncRetry(
+		func(retriedCount int, returnValue interface{}, err error){
+			retried = true
+		})
+	errChan := make(chan error)
+	go func(){
+		errChan <- suite.policy.TryMethodWithTimeout(errorMethod, time.Millisecond * 10)
+	}()
+	select {
+	case err := <- errChan: {
+			assert.Equal(suite.T(), TimeoutError, err)
+			assert.True(suite.T(), retried)
+		}
+		case <- time.After(time.Millisecond * 50): assert.Fail(suite.T(), "timeout")
+	}
+}
+
+func (suite *RetryMethodTestSuite) TestRetryMethodWithTimeout(){
+	suite.policy = suite.policy.WithInfiniteRetry()
+	errorChan := make(chan error)
+	go func(){
+		errorChan <- suite.policy.TryMethodWithTimeout(successMethod, time.Millisecond * 10)
+	}()
+	select {
+	case err := <-errorChan: {
+		assert.Nil(suite.T(), err)
 	}
 	case <- time.After(time.Millisecond * 50): assert.Fail(suite.T(), "timeout")
 	}

@@ -1,5 +1,10 @@
 package gotry
 
+import (
+	"time"
+	"errors"
+)
+
 type Func func() FuncReturn
 type OnFuncError func(retriedCount int, returnValue interface{}, err error)
 type Method func() error
@@ -24,6 +29,8 @@ type Policy interface {
 	TryMethod(methodBody Method) error
 	TryFuncWithCancellation(funcBody func() FuncReturn, cancellation Cancellation) FuncReturn
 	TryMethodWithCancellation(methodBody Method, cancellation Cancellation) error
+	TryFuncWithTimeout(funcBody func() FuncReturn, duration time.Duration) FuncReturn
+	TryMethodWithTimeout(methodBody Method, duration time.Duration) error
 }
 
 type policy struct{
@@ -33,6 +40,8 @@ type policy struct{
 	onMethodError OnMethodError
 	onPanic       OnPanic
 }
+
+var TimeoutError = errors.New("timeout")
 
 func NewPolicy() Policy {
 	return &policy{
@@ -80,6 +89,21 @@ func (policy policy) WithOnMethodRetry(onRetry OnMethodError) Policy{
 func (policy policy) WithOnPanic(onPanic OnPanic) Policy{
 	policy.onPanic = onPanic
 	return &policy
+}
+
+func (policy *policy) TryFuncWithTimeout(funcBody func() FuncReturn, duration time.Duration) FuncReturn{
+	timeoutCancellation := &cancellation{}
+	funcReturnChan := make(chan FuncReturn)
+	go func(){
+		funcReturnChan <- policy.TryFuncWithCancellation(funcBody, timeoutCancellation)
+	}()
+	select {
+		case funcReturn := <- funcReturnChan: return funcReturn
+		case <- time.After(duration):{
+			timeoutCancellation.Cancel()
+			return FuncReturn{Valid:false, Err:TimeoutError}
+		}
+	}
 }
 
 func (policy *policy) TryFuncWithCancellation(funcBody func() FuncReturn, cancellation Cancellation) FuncReturn{
@@ -141,6 +165,21 @@ func success(funcReturn FuncReturn) bool {
 
 func nextIterationBecauseDeferExecuteAtLastSoIShouldIncreaseToJudgeIfPanicNeeded(i int) int {
 	return i + 1
+}
+
+func (policy *policy) TryMethodWithTimeout(methodBody Method, duration time.Duration) error{
+	timeoutCancellation := &cancellation{}
+	errChan := make(chan error)
+	go func(){
+		errChan <- policy.TryMethodWithCancellation(methodBody, timeoutCancellation)
+	}()
+	select {
+		case err := <-errChan: return err
+		case <- time.After(duration):{
+			timeoutCancellation.Cancel()
+			return TimeoutError
+		}
+	}
 }
 
 func (policy *policy) TryMethodWithCancellation(methodBody Method, cancellation Cancellation) error{
