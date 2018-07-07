@@ -19,9 +19,9 @@ type FuncReturn struct {
 
 type Policy interface {
 	WithRetryLimit(retryLimit int) Policy
-	WithInfiniteRetry() Policy
-	WithRetryPredicate(predicate func(int)bool) Policy
-	WithRetryOnPanic(retryOnPanic bool) Policy
+	WithRetryForever() Policy
+	WithRetryUntil(stopPredicate func(int)bool) Policy
+	WithLetItPanic() Policy
 	WithOnFuncRetry(onRetry OnFuncError) Policy
 	WithOnMethodRetry(onRetry OnMethodError) Policy
 	WithOnPanic(onPanic OnPanic) Policy
@@ -57,22 +57,22 @@ func (policy policy) WithRetryLimit(retryLimit int) Policy{
 	return &policy
 }
 
-func (policy policy) WithInfiniteRetry() Policy {
+func (policy policy) WithRetryForever() Policy {
 	policy.shouldRetry = func(retriedCount int) bool {
 		return true
 	}
 	return &policy
 }
 
-func (policy policy) WithRetryPredicate(predicate func(int)bool) Policy{
+func (policy policy) WithRetryUntil(stopPredicate func(int)bool) Policy{
 	policy.shouldRetry = func(retriedCount int)bool {
-		return predicate(retriedCount)
+		return !stopPredicate(retriedCount)
 	}
 	return &policy
 }
 
-func (policy policy) WithRetryOnPanic(retryOnPanic bool) Policy{
-	policy.retryOnPanic = retryOnPanic
+func (policy policy) WithLetItPanic() Policy{
+	policy.retryOnPanic = false
 	return &policy
 }
 
@@ -217,8 +217,8 @@ func panicIfExceedLimit(policy *policy, i int, err interface{}) {
 }
 
 func (policy policy) withCancellation(cancellation Cancellation) Policy{
-	originPredicate := policy.shouldRetry
-	return policy.WithRetryPredicate(func(retriedCount int) bool {
-		return !cancellation.IsCancellationRequested() && originPredicate(retriedCount)
+	shouldRetry := policy.shouldRetry
+	return policy.WithRetryUntil(func(retriedCount int) bool {
+		return cancellation.IsCancellationRequested() || !shouldRetry(retriedCount)
 	})
 }

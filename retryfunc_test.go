@@ -81,7 +81,7 @@ func (suite *RetryFuncTestSuite) TestMultipleRetry() {
 }
 
 func (suite *RetryFuncTestSuite) TestInfiniteRetry() {
-	suite.policy = suite.policy.WithInfiniteRetry()
+	suite.policy = suite.policy.WithRetryForever()
 	invokeCount := 0
 	var errorFunc = func() FuncReturn {
 		defer func(){
@@ -116,7 +116,7 @@ func (suite *RetryFuncTestSuite) TestPanicFunc() {
 func (suite *RetryFuncTestSuite) TestOnPanicEventEvenNoRetryOnPanicFunc() {
 	var emptyOnRetry= func(retryCount int, returnValue interface{}, err error) {}
 	mockRetry, onPanic := prepareMockOnPanicFuncWithoutOnError()
-	suite.policy = suite.policy.WithRetryOnPanic(false).WithOnFuncRetry(emptyOnRetry).WithOnPanic(onPanic)
+	suite.policy = suite.policy.WithLetItPanic().WithOnFuncRetry(emptyOnRetry).WithOnPanic(onPanic)
 	defer func() {
 		unexpectedRuntimeError := recover()
 		assert.Equal(suite.T(), PanicContent, unexpectedRuntimeError)
@@ -135,7 +135,7 @@ func (suite *RetryFuncTestSuite) TestOnPanicFuncWithNoRetryEvent(){
 }
 
 func (suite *RetryFuncTestSuite) TestNotRetryOnPanicFunc() {
-	suite.policy = suite.policy.WithRetryOnPanic(false)
+	suite.policy = suite.policy.WithLetItPanic()
 	defer func(){
 		err := recover()
 		assert.Equal(suite.T(), PanicContent, err)
@@ -166,17 +166,17 @@ func (suite *RetryFuncTestSuite) TestOnPanicShouldNotCallOnErrorEvent() {
 
 func (suite *RetryFuncTestSuite) TestOnRetryPredicate() {
 	retried := false
-	predicate := func(int)bool{
+	isSuccess := func(int)bool{
 		defer func(){
 			retried = true
 		}()
-		return !retried
+		return retried
 	}
 	var invalidReturnFunc Func = func() FuncReturn {
 		var returnValue = ExpectedReturnValue
 		return FuncReturn{returnValue, false, nil}
 	}
-	suite.policy = suite.policy.WithRetryPredicate(predicate)
+	suite.policy = suite.policy.WithRetryUntil(isSuccess)
 	mockRetry := &mockRetry{}
 	onError := func(retryAttempt int, returnValue interface{}, err error) {
 		mockRetry.OnFuncError(retryAttempt, returnValue, err)
@@ -190,7 +190,7 @@ func (suite *RetryFuncTestSuite) TestOnRetryPredicate() {
 func (suite *RetryFuncTestSuite) TestCancelFuncRetry(){
 	var cancellation Cancellation = &cancellation{}
 	retried := false
-	suite.policy = suite.policy.WithInfiniteRetry().WithOnFuncRetry(
+	suite.policy = suite.policy.WithRetryForever().WithOnFuncRetry(
 		func(retriedCount int, returnValue interface{}, err error){
 			retried = true
 			cancellation.Cancel()
@@ -212,7 +212,7 @@ func (suite *RetryFuncTestSuite) TestCancelFuncRetry(){
 
 func (suite *RetryFuncTestSuite) TestInfiniteRetryFuncWithTimeout(){
 	retried := false
-	suite.policy = suite.policy.WithInfiniteRetry().WithOnFuncRetry(
+	suite.policy = suite.policy.WithRetryForever().WithOnFuncRetry(
 		func(retriedCount int, returnValue interface{}, err error){
 			retried = true
 	})
@@ -231,7 +231,7 @@ func (suite *RetryFuncTestSuite) TestInfiniteRetryFuncWithTimeout(){
 }
 
 func (suite *RetryFuncTestSuite) TestRetryFuncWithTimeout(){
-	suite.policy = suite.policy.WithInfiniteRetry()
+	suite.policy = suite.policy.WithRetryForever()
 	returnChan := make(chan FuncReturn)
 	go func(){
 		returnChan <- suite.policy.TryFuncWithTimeout(successFunc, time.Millisecond * 10)

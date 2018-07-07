@@ -53,7 +53,7 @@ func (suite *RetryMethodTestSuite) TestMultipleRetryMethod() {
 }
 
 func (suite *RetryMethodTestSuite) TestInfiniteRetryMethod() {
-	suite.policy = suite.policy.WithInfiniteRetry()
+	suite.policy = suite.policy.WithRetryForever()
 	count := 0
 	var errorMethod = func() error {
 		defer func(){
@@ -90,7 +90,7 @@ func (suite *RetryMethodTestSuite) TestOnPanicMethodWithOnError() {
 
 func (suite *RetryMethodTestSuite) TestCancelMethodRetry(){
 	var cancellation Cancellation = &cancellation{}
-	suite.policy = suite.policy.WithInfiniteRetry().WithOnMethodRetry(
+	suite.policy = suite.policy.WithRetryForever().WithOnMethodRetry(
 		func(retriedCount int, err error){
 			cancellation.Cancel()
 		})
@@ -110,7 +110,7 @@ func (suite *RetryMethodTestSuite) TestCancelMethodRetry(){
 
 func (suite *RetryMethodTestSuite) TestInfiniteRetryMethodWithTimeout(){
 	retried := false
-	suite.policy = suite.policy.WithInfiniteRetry().WithOnFuncRetry(
+	suite.policy = suite.policy.WithRetryForever().WithOnFuncRetry(
 		func(retriedCount int, returnValue interface{}, err error){
 			retried = true
 		})
@@ -128,7 +128,7 @@ func (suite *RetryMethodTestSuite) TestInfiniteRetryMethodWithTimeout(){
 }
 
 func (suite *RetryMethodTestSuite) TestRetryMethodWithTimeout(){
-	suite.policy = suite.policy.WithInfiniteRetry()
+	suite.policy = suite.policy.WithRetryForever()
 	errorChan := make(chan error)
 	go func(){
 		errorChan <- suite.policy.TryMethodWithTimeout(successMethod, time.Millisecond * 10)
