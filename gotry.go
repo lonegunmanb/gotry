@@ -10,6 +10,7 @@ type OnFuncError func(retriedCount int, returnValue interface{}, err error)
 type Method func() error
 type OnMethodError func(retriedCount int, err error)
 type OnPanic func(panicError interface{})
+type OnTimeout func(timeout time.Duration)
 
 type FuncReturn struct {
 	ReturnValue interface{}
@@ -20,7 +21,7 @@ type FuncReturn struct {
 type Policy interface {
 	WithRetryLimit(retryLimit int) Policy
 	WithRetryForever() Policy
-	WithRetryUntil(stopPredicate func(int)bool) Policy
+	WithRetryUntil(stopPredicate func(int) bool) Policy
 	WithLetItPanic() Policy
 	WithTimeout(timeout time.Duration) Policy
 	WithOnFuncRetry(onRetry OnFuncError) Policy
@@ -30,16 +31,18 @@ type Policy interface {
 	TryMethod(methodBody Method) error
 	TryFuncWithCancellation(funcBody func() FuncReturn, cancellation Cancellation) FuncReturn
 	TryMethodWithCancellation(methodBody Method, cancellation Cancellation) error
+	WithOnTimeout(onTimeout OnTimeout) Policy
 }
 
 type policy struct{
 	retryOnPanic  bool
-	timeout *time.Duration
+	timeout       *time.Duration
 	shouldRetry   func(int) bool
-	funcExecutor func (*policy, Func) FuncReturn
+	funcExecutor  func(*policy, Func) FuncReturn
 	onFuncError   OnFuncError
 	onMethodError OnMethodError
 	onPanic       OnPanic
+	onTimeout     OnTimeout
 }
 
 var TimeoutError = errors.New("timeout")
@@ -102,18 +105,34 @@ func (p policy) WithTimeout(timeout time.Duration) Policy{
 	return &p
 }
 
-func (p *policy) tryFuncWithTimeout(funcBody func() FuncReturn, duration time.Duration) FuncReturn{
+func (p policy) WithOnTimeout(onTimeout OnTimeout) Policy{
+	p.onTimeout = onTimeout
+	return &p
+}
+
+func (p *policy) tryFuncWithTimeout(funcBody func() FuncReturn, duration time.Duration) FuncReturn {
 	timeoutCancellation := &cancellation{}
 	funcReturnChan := make(chan FuncReturn)
-	go func(){
+	go func() {
 		funcReturnChan <- p.TryFuncWithCancellation(funcBody, timeoutCancellation)
 	}()
 	select {
-		case funcReturn := <- funcReturnChan: return funcReturn
-		case <- time.After(duration):{
-			timeoutCancellation.Cancel()
-			return FuncReturn{Valid:false, Err:TimeoutError}
+	case funcReturn := <-funcReturnChan:
+		{
+			return funcReturn
 		}
+	case <-time.After(duration):
+		{
+			timeoutCancellation.Cancel()
+			notifyOnTimeout(p, duration)
+			return FuncReturn{Valid: false, Err: TimeoutError}
+		}
+	}
+}
+
+func notifyOnTimeout(p *policy, duration time.Duration) {
+	if p.onTimeout != nil {
+		p.onTimeout(duration)
 	}
 }
 

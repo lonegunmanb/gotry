@@ -246,6 +246,23 @@ func (suite *RetryFuncTestSuite) TestRetryFuncWithTimeout(){
 	}
 }
 
+func (suite *RetryFuncTestSuite) TestOnTimeout(){
+	var timeoutReceived time.Duration
+	suite.policy = suite.policy.WithRetryForever().WithTimeout(timeout).WithOnTimeout(func(t time.Duration){
+		timeoutReceived = t
+	})
+	returnChan := make(chan FuncReturn)
+	go func(){
+		returnChan <- suite.policy.TryFunc(errorFunc)
+	}()
+	select {
+	case <- returnChan: {
+ 		assert.Equal(suite.T(), timeout, timeoutReceived)
+	}
+	case <- time.After(waitTime): assert.Fail(suite.T(), "timeout")
+	}
+}
+
 func prepareMockOnPanicFuncWithoutOnError() (*mockRetry, func(interface{})){
 	mockRetry := &mockRetry{}
 	onPanicHook := func(panicError interface{}){
