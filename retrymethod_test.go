@@ -116,14 +116,14 @@ func (suite *RetryMethodTestSuite) TestInfiniteRetryMethodWithTimeout(){
 		})
 	errChan := make(chan error)
 	go func(){
-		errChan <- suite.policy.TryMethodWithTimeout(errorMethod, time.Millisecond * 10)
+		errChan <- suite.policy.WithTimeout(timeout).TryMethod(errorMethod)
 	}()
 	select {
 	case err := <- errChan: {
 			assert.Equal(suite.T(), TimeoutError, err)
 			assert.True(suite.T(), retried)
 		}
-		case <- time.After(time.Millisecond * 50): assert.Fail(suite.T(), "timeout")
+		case <- time.After(waitTime): assert.Fail(suite.T(), "timeout")
 	}
 }
 
@@ -131,13 +131,13 @@ func (suite *RetryMethodTestSuite) TestRetryMethodWithTimeout(){
 	suite.policy = suite.policy.WithRetryForever()
 	errorChan := make(chan error)
 	go func(){
-		errorChan <- suite.policy.TryMethodWithTimeout(successMethod, time.Millisecond * 10)
+		errorChan <- suite.policy.WithTimeout(timeout).TryMethod(successMethod)
 	}()
 	select {
 	case err := <-errorChan: {
 		assert.Nil(suite.T(), err)
 	}
-	case <- time.After(time.Millisecond * 50): assert.Fail(suite.T(), "timeout")
+	case <- time.After(waitTime): assert.Fail(suite.T(), "timeout")
 	}
 }
 

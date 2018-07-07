@@ -218,7 +218,7 @@ func (suite *RetryFuncTestSuite) TestInfiniteRetryFuncWithTimeout(){
 	})
 	errChan := make(chan FuncReturn)
 	go func(){
-		errChan <- suite.policy.TryFuncWithTimeout(errorFunc, time.Millisecond * 10)
+		errChan <- suite.policy.WithTimeout(timeout).TryFunc(errorFunc)
 	}()
 	select {
 		case funcReturn := <- errChan: {
@@ -226,7 +226,7 @@ func (suite *RetryFuncTestSuite) TestInfiniteRetryFuncWithTimeout(){
 			assert.False(suite.T(), funcReturn.Valid)
 			assert.True(suite.T(), retried)
 		}
-		case <- time.After(time.Millisecond * 50): assert.Fail(suite.T(), "timeout")
+		case <- time.After(waitTime): assert.Fail(suite.T(), "timeout")
 	}
 }
 
@@ -234,7 +234,7 @@ func (suite *RetryFuncTestSuite) TestRetryFuncWithTimeout(){
 	suite.policy = suite.policy.WithRetryForever()
 	returnChan := make(chan FuncReturn)
 	go func(){
-		returnChan <- suite.policy.TryFuncWithTimeout(successFunc, time.Millisecond * 10)
+		returnChan <- suite.policy.WithTimeout(timeout).TryFunc(successFunc)
 	}()
 	select {
 	case funcReturn := <- returnChan: {
@@ -242,7 +242,7 @@ func (suite *RetryFuncTestSuite) TestRetryFuncWithTimeout(){
 			assert.True(suite.T(), funcReturn.Valid)
 			assert.Equal(suite.T(), funcReturn.ReturnValue, ExpectedReturnValue)
 		}
-		case <- time.After(time.Millisecond * 50): assert.Fail(suite.T(), "timeout")
+		case <- time.After(waitTime): assert.Fail(suite.T(), "timeout")
 	}
 }
 

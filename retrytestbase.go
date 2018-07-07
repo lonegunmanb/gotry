@@ -4,6 +4,7 @@ import (
 	"github.com/stretchr/testify/suite"
 	"errors"
 	"github.com/stretchr/testify/mock"
+	"time"
 )
 
 const ExpectedReturnValue = 1
@@ -12,6 +13,8 @@ const OnMethodErrorMethodName = "OnMethodError"
 const OnFuncErrorMethodName = "OnFuncError"
 var ExpectedError = errors.New("expectedError")
 const PanicContent ="test panic"
+var timeout = time.Millisecond * 10
+var waitTime = timeout * 2
 var panicMethod = func() error {
 	panic(PanicContent)
 }
