@@ -36,6 +36,7 @@ type Policy interface {
 type policy struct{
 	retryOnPanic  bool
 	shouldRetry   func(int) bool
+	funcExecutor func (*policy, Func) FuncReturn
 	onFuncError   OnFuncError
 	onMethodError OnMethodError
 	onPanic       OnPanic
@@ -44,10 +45,12 @@ type policy struct{
 var TimeoutError = errors.New("timeout")
 
 func NewPolicy() Policy {
-	return &policy{
+	policy := policy{
 		retryOnPanic: true,
 		shouldRetry:  func(retriedCount int) bool { return false },
 	}
+	policy.funcExecutor = tryFunc
+	return &policy
 }
 
 func (policy policy) WithRetryLimit(retryLimit int) Policy{
@@ -111,6 +114,10 @@ func (policy *policy) TryFuncWithCancellation(funcBody func() FuncReturn, cancel
 }
 
 func(policy *policy) TryFunc(funcBody Func) (funcReturn FuncReturn) {
+	return policy.funcExecutor(policy, funcBody)
+}
+
+func tryFunc(policy *policy, funcBody Func) (funcReturn FuncReturn) {
 	notifyPanic := policy.buildNotifyPanicMethod()
 	for retried := 0; policy.shouldRetry(retried); retried++ {
 		var recoverableBody = policy.wrapFuncBodyWithPanicNotify(notifyPanic, funcBody, retried)
