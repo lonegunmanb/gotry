@@ -14,8 +14,20 @@ type OnCancel func()
 type cancellation struct {
 	isCancellationRequestedFlag int32
 	onCancel OnCancel
-	
 }
+
+func NewCancellation() Cancellation{
+	return &cancellation{}
+}
+
+func newCompositeCancellation(c Cancellation) Cancellation{
+	var newCancellation Cancellation = &cancellation{}
+	newCancellation = newCancellation.OnCancel(func(){
+		c.Cancel()
+	})
+	return newCancellation
+}
+
 func (cancellation *cancellation) IsCancellationRequested() bool {
 	return atomic.LoadInt32(&cancellation.isCancellationRequestedFlag) == cancellationRequestedFlag
 }
@@ -39,11 +51,11 @@ func successfulCanceled(cancellation *cancellation) bool {
 		cancellationRequestedFlag)
 }
 func (cancellation cancellation) OnCancel(onCancel OnCancel) Cancellation {
-	if cancellation.onCancel == nil {
+	originOnCancel := cancellation.onCancel
+	if originOnCancel == nil {
 		cancellation.onCancel = onCancel
 	} else {
-		originOnCancel := cancellation.onCancel
-		cancellation.onCancel = func(){
+		cancellation.onCancel = func() {
 			originOnCancel()
 			onCancel()
 		}
