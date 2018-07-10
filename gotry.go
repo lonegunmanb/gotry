@@ -29,7 +29,7 @@ type Policy interface {
 	WithOnPanic(onPanic OnPanic) Policy
 	TryFunc(funcBody Func) FuncReturn
 	TryMethod(methodBody Method) error
-	TryFuncWithCancellation(funcBody func() FuncReturn, cancellation Cancellation) FuncReturn
+	TryFuncWithCancellation(funcBody Func, cancellation Cancellation) FuncReturn
 	TryMethodWithCancellation(methodBody Method, cancellation Cancellation) error
 	WithOnTimeout(onTimeout OnTimeout) Policy
 }
@@ -110,7 +110,7 @@ func (p policy) WithOnTimeout(onTimeout OnTimeout) Policy{
 	return &p
 }
 
-func (p *policy) tryFuncWithTimeout(funcBody func() FuncReturn, duration time.Duration) FuncReturn {
+func (p *policy) tryFuncWithTimeout(funcBody Func, duration time.Duration) FuncReturn {
 	timeoutCancellation := &cancellation{}
 	funcReturnChan := make(chan FuncReturn)
 	go func() {
@@ -136,11 +136,11 @@ func notifyOnTimeout(p *policy, duration time.Duration) {
 	}
 }
 
-func (p *policy) TryFuncWithCancellation(funcBody func() FuncReturn, cancellation Cancellation) FuncReturn{
+func (p *policy) TryFuncWithCancellation(funcBody Func, cancellation Cancellation) FuncReturn{
 	return p.tryFuncWithCancellation(funcBody, cancellation, directTryFunc)
 }
 
-func (p *policy) tryFuncWithCancellation(funcBody func() FuncReturn,
+func (p *policy) tryFuncWithCancellation(funcBody Func,
 										 cancellation Cancellation,
 										 tryExecutor func(*policy, Func) FuncReturn) FuncReturn {
 	return tryExecutor(p.withCancellation(cancellation).(*policy), funcBody)
@@ -167,7 +167,7 @@ func directTryFunc(policy *policy, funcBody Func) (funcReturn FuncReturn) {
 	return
 }
 
-func (p *policy) wrapFuncBodyWithPanicNotify(notifyPanic OnPanic, funcBody Func, i int)(func() (FuncReturn, bool)) {
+func (p *policy) wrapFuncBodyWithPanicNotify(notifyPanic OnPanic, funcBody Func, retried int)(func() (FuncReturn, bool)) {
 	return func() (funcReturn FuncReturn, panicOccurred bool) {
 		panicOccurred = false
 		defer func() {
@@ -176,7 +176,7 @@ func (p *policy) wrapFuncBodyWithPanicNotify(notifyPanic OnPanic, funcBody Func,
 				panicOccurred = true
 				notifyPanic(panicErr)
 				panicIfExceedLimit(p,
-					nextIterationBecauseDeferExecuteAtLastSoIShouldIncreaseToJudgeIfPanicNeeded(i),
+					nextIterationBecauseDeferExecuteAtLastSoIShouldIncreaseToJudgeIfPanicNeeded(retried),
 					panicErr)
 			}
 		}()
@@ -207,21 +207,6 @@ func nextIterationBecauseDeferExecuteAtLastSoIShouldIncreaseToJudgeIfPanicNeeded
 	return i + 1
 }
 
-func (p *policy) TryMethodWithTimeout(methodBody Method, duration time.Duration) error{
-	timeoutCancellation := &cancellation{}
-	errChan := make(chan error)
-	go func(){
-		errChan <- p.TryMethodWithCancellation(methodBody, timeoutCancellation)
-	}()
-	select {
-		case err := <-errChan: return err
-		case <- time.After(duration):{
-			timeoutCancellation.Cancel()
-			return TimeoutError
-		}
-	}
-}
-
 func (p *policy) TryMethodWithCancellation(methodBody Method, cancellation Cancellation) error{
 	return p.withCancellation(cancellation).TryMethod(methodBody)
 }
@@ -243,7 +228,7 @@ func (p *policy) wireOnFuncErrorToOnMethodError() Policy {
 	})
 }
 
-func (methodBody Method) convertToFunc() (func() FuncReturn){
+func (methodBody Method) convertToFunc() Func{
 	return func() FuncReturn{
 		var err = methodBody()
 		return FuncReturn{nil, true, err}

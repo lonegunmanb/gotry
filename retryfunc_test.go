@@ -230,6 +230,27 @@ func (suite *RetryFuncTestSuite) TestInfiniteRetryFuncWithTimeout(){
 	}
 }
 
+func (suite *RetryFuncTestSuite) TestCancelInfiniteRetryFuncWithTimeout(){
+	cancellation := NewCancellation()
+	suite.policy = suite.policy.WithRetryForever().WithOnFuncRetry(
+		func(retriedCount int, returnValue interface{}, err error){
+			cancellation.Cancel()
+		})
+	errChan := make(chan FuncReturn)
+
+	go func(){
+		errChan <- suite.policy.WithTimeout(timeout).TryFuncWithCancellation(errorFunc, cancellation)
+	}()
+
+	select {
+	case funcReturn := <- errChan: {
+		assert.Equal(suite.T(), ExpectedError, funcReturn.Err)
+		assert.True(suite.T(), funcReturn.Valid)
+	}
+	case <- time.After(waitTime): assert.Fail(suite.T(), "timeout")
+	}
+}
+
 func (suite *RetryFuncTestSuite) TestRetryFuncWithTimeout(){
 	suite.policy = suite.policy.WithRetryForever()
 	returnChan := make(chan FuncReturn)
