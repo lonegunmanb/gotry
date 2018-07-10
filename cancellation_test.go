@@ -9,7 +9,7 @@ import (
 type mockCancel struct {
 	mock.Mock
 }
-
+const onCancelName = "OnCancel"
 func (mockCancel *mockCancel) OnCancel(){
 	mockCancel.Called()
 }
@@ -31,10 +31,25 @@ func TestTwiceCancel(t *testing.T){
 }
 
 func TestOnCancel(t *testing.T){
-	cancellation := &cancellation{}
-	cancelHook := &mockCancel{}
-	cancelHook.On("OnCancel").Return()
-	cancellation.OnCancel(func(){cancelHook.OnCancel()})
+	cancellation, mockCancel := BuildOnCancelMock(&cancellation{})
 	cancellation.Cancel()
-	cancelHook.AssertCalled(t, "OnCancel")
+	mockCancel.AssertCalled(t, onCancelName)
+}
+
+func TestMultipleOnCancelEvents(t *testing.T){
+	cancellation, cancelHook := BuildOnCancelMock(&cancellation{})
+	anotherCancelHook := &mockCancel{}
+
+	anotherCancelHook.On(onCancelName).Return()
+	cancellation = cancellation.OnCancel(func(){anotherCancelHook.OnCancel()})
+	cancellation.Cancel()
+	cancelHook.AssertCalled(t, onCancelName)
+	anotherCancelHook.AssertCalled(t, onCancelName)
+}
+
+func BuildOnCancelMock(cancellation Cancellation) (Cancellation, *mockCancel){
+	cancelHook := &mockCancel{}
+	cancelHook.On(onCancelName).Return()
+	cancellation = cancellation.OnCancel(func(){cancelHook.OnCancel()})
+	return cancellation, cancelHook
 }

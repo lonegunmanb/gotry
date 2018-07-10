@@ -7,6 +7,7 @@ const cancellationRequestedFlag = 1
 type Cancellation interface {
 	IsCancellationRequested() bool
 	Cancel() bool
+	OnCancel(onCancel OnCancel) Cancellation
 }
 type OnCancel func()
 
@@ -37,6 +38,15 @@ func successfulCanceled(cancellation *cancellation) bool {
 		cancellationNotRequestedFlag,
 		cancellationRequestedFlag)
 }
-func (cancellation *cancellation) OnCancel(onCancel OnCancel) {
-	cancellation.onCancel = onCancel
+func (cancellation cancellation) OnCancel(onCancel OnCancel) Cancellation {
+	if cancellation.onCancel == nil {
+		cancellation.onCancel = onCancel
+	} else {
+		originOnCancel := cancellation.onCancel
+		cancellation.onCancel = func(){
+			originOnCancel()
+			onCancel()
+		}
+	}
+	return &cancellation
 }
