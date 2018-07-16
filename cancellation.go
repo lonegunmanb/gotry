@@ -12,6 +12,11 @@ type Cancellation interface {
 type cancellation struct {
 	isCancellationRequestedFlag int32
 }
+
+func NewCancellation() Cancellation{
+	return &cancellation{}
+}
+
 func (cancellation *cancellation) IsCancellationRequested() bool {
 	return atomic.LoadInt32(&cancellation.isCancellationRequestedFlag) == cancellationRequestedFlag
 }
