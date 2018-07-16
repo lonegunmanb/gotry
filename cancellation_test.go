@@ -6,7 +6,7 @@ import (
 )
 
 func TestCancel(t *testing.T){
-	cancellation := &cancellation{}
+	cancellation := NewCancellation()
 	assert.False(t, cancellation.IsCancellationRequested())
 	cancelRequested := cancellation.Cancel()
 	assert.True(t, cancelRequested)
@@ -14,7 +14,7 @@ func TestCancel(t *testing.T){
 }
 
 func TestTwiceCancel(t *testing.T){
-	cancellation := &cancellation{}
+	cancellation := NewCancellation()
 	_ = cancellation.Cancel()
 	cancelRequested := cancellation.Cancel()
 	assert.False(t, cancelRequested)
