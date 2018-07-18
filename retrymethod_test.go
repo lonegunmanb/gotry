@@ -110,8 +110,8 @@ func (suite *RetryMethodTestSuite) TestCancelMethodRetry(){
 
 func (suite *RetryMethodTestSuite) TestInfiniteRetryMethodWithTimeout(){
 	retried := false
-	suite.policy = suite.policy.WithRetryForever().WithOnFuncRetry(
-		func(retriedCount int, returnValue interface{}, err error){
+	suite.policy = suite.policy.WithRetryForever().WithOnMethodRetry(
+		func(retriedCount int, err error){
 			retried = true
 		})
 	errChan := make(chan error)
