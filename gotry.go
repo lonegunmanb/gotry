@@ -83,17 +83,41 @@ func (p policy) WithLetItPanic() Policy{
 }
 
 func (p policy) WithOnFuncRetry(onRetry OnFuncError) Policy{
-	p.onFuncError = onRetry
+	originEvent := p.onFuncError
+	if originEvent != nil {
+		p.onFuncError = func(retriedCount int, returnValue interface{}, err error) {
+			originEvent(retriedCount, returnValue, err)
+			onRetry(retriedCount, returnValue, err)
+		}
+	} else {
+		p.onFuncError = onRetry
+	}
 	return &p
 }
 
 func (p policy) WithOnMethodRetry(onRetry OnMethodError) Policy{
-	p.onMethodError = onRetry
+	originEvent := p.onMethodError
+	if originEvent!=nil {
+		p.onMethodError = func(retriedCount int, err error) {
+			originEvent(retriedCount, err)
+			onRetry(retriedCount, err)
+		}
+	} else {
+		p.onMethodError = onRetry
+	}
 	return &p
 }
 
 func (p policy) WithOnPanic(onPanic OnPanic) Policy{
-	p.onPanic = onPanic
+	originEvent := p.onPanic
+	if originEvent != nil {
+		p.onPanic = func(panicError interface{}) {
+			originEvent(panicError)
+			onPanic(panicError)
+		}
+	} else {
+		p.onPanic = onPanic
+	}
 	return &p
 }
 
@@ -106,7 +130,15 @@ func (p policy) WithTimeout(timeout time.Duration) Policy{
 }
 
 func (p policy) WithOnTimeout(onTimeout OnTimeout) Policy{
-	p.onTimeout = onTimeout
+	originEvent := p.onTimeout
+	if originEvent != nil {
+		p.onTimeout = func(timeout time.Duration) {
+			originEvent(timeout)
+			onTimeout(timeout)
+		}
+	} else {
+		p.onTimeout = onTimeout
+	}
 	return &p
 }
 

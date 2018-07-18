@@ -8,9 +8,12 @@ import (
 )
 
 const ExpectedReturnValue = 1
-const OnPanicMethodName = "OnPanic"
-const OnMethodErrorMethodName = "OnMethodError"
-const OnFuncErrorMethodName = "OnFuncError"
+const (
+	OnPanicMethodName       = "OnPanic"
+	OnMethodErrorMethodName = "OnMethodError"
+	OnFuncErrorMethodName   = "OnFuncError"
+	OnTimeoutMethodName     = "OnTimeout"
+)
 var ExpectedError = errors.New("expectedError")
 const PanicContent ="test panic"
 var timeout = time.Millisecond * 10
@@ -45,4 +48,7 @@ func (hook *mockRetry) OnMethodError(retryAttempt int, err error) {
 
 func (hook *mockRetry) OnPanic(panicError interface{}){
 	hook.Called(panicError)
+}
+func (hook *mockRetry) OnTimeout(duration time.Duration) {
+	hook.Called(duration)
 }
